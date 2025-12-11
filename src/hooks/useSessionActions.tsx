@@ -7,7 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTradingState } from './useSessionState';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const TICK_INTERVAL_MS = 2000; // Trading tick interval - strategy execution
+const TICK_INTERVAL_MS = 1000; // 1 second between ticks (fast engine loop)
 const PNL_REFRESH_MS = 300; // P&L refresh interval - fast UI updates
 
 // Map UI mode to backend mode
