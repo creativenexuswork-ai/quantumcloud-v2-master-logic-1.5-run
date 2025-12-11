@@ -21,13 +21,8 @@ export interface TradingState {
 }
 
 export const SUPPORTED_SYMBOLS = [
-  { symbol: 'BTCUSDT', name: 'Bitcoin', type: 'crypto' },
-  { symbol: 'ETHUSDT', name: 'Ethereum', type: 'crypto' },
-  { symbol: 'EURUSD', name: 'EUR/USD', type: 'forex' },
-  { symbol: 'GBPUSD', name: 'GBP/USD', type: 'forex' },
-  { symbol: 'NAS100', name: 'Nasdaq 100', type: 'index' },
-  { symbol: 'SPX500', name: 'S&P 500', type: 'index' },
-  { symbol: 'XAUUSD', name: 'Gold', type: 'metal' },
+  { symbol: 'BTCUSD', name: 'Bitcoin', type: 'crypto' },
+  { symbol: 'ETHUSD', name: 'Ethereum', type: 'crypto' },
 ] as const;
 
 export type SupportedSymbol = typeof SUPPORTED_SYMBOLS[number]['symbol'];
