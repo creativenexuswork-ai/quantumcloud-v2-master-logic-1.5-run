@@ -1,0 +1,586 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@layer base {
+  :root {
+    /* Premium Trading Terminal - Dark Theme */
+    --background: 220 50% 4%;
+    --foreground: 210 40% 98%;
+
+    /* Cards - Glassy dark panels */
+    --card: 220 50% 8%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 220 50% 10%;
+    --popover-foreground: 210 40% 98%;
+
+    /* Primary - Electric Blue */
+    --primary: 217 91% 60%;
+    --primary-foreground: 220 50% 4%;
+
+    /* Secondary - Purple accent */
+    --secondary: 262 83% 58%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 220 30% 15%;
+    --muted-foreground: 215 20% 55%;
+
+    --accent: 262 83% 58%;
+    --accent-foreground: 210 40% 98%;
+
+    /* Status colors */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 142 76% 45%;
+    --success-foreground: 220 50% 4%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 220 50% 4%;
+
+    --border: 220 30% 18%;
+    --input: 220 30% 15%;
+    --ring: 217 91% 60%;
+
+    --radius: 1.125rem;
+
+    /* Chart colors */
+    --chart-1: 217 91% 60%;
+    --chart-2: 142 76% 45%;
+    --chart-3: 0 84% 60%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 262 83% 58%;
+
+    /* Trading-specific tokens */
+    --profit: 142 76% 45%;
+    --loss: 0 84% 60%;
+    --neutral: 220 20% 50%;
+
+    /* Glass effects */
+    --card-glass: 220 50% 10%;
+    --card-border: 217 91% 60%;
+    --glass-bg: 220 50% 8%;
+    --glass-border: 220 30% 20%;
+
+    /* Glow effects */
+    --glow-primary: 217 91% 60%;
+    --glow-secondary: 262 83% 58%;
+
+    /* Sidebar */
+    --sidebar-background: 220 50% 6%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 220 50% 12%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 220 30% 18%;
+    --sidebar-ring: 217 91% 60%;
+  }
+
+  /* Force dark mode always for trading terminal */
+  .dark {
+    --background: 220 50% 4%;
+    --foreground: 210 40% 98%;
+    --card: 220 50% 8%;
+    --card-foreground: 210 40% 98%;
+    --popover: 220 50% 10%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 220 50% 4%;
+    --secondary: 262 83% 58%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 220 30% 15%;
+    --muted-foreground: 215 20% 55%;
+    --accent: 262 83% 58%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 220 30% 18%;
+    --input: 220 30% 15%;
+    --ring: 217 91% 60%;
+    --card-glass: 220 50% 10%;
+    --card-border: 217 91% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply dark;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background: linear-gradient(180deg, hsl(220 50% 3%) 0%, hsl(220 50% 7%) 100%);
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight text-foreground;
+  }
+}
+
+@layer components {
+  /* Premium glass card */
+  .glass-panel {
+    @apply relative rounded-2xl border border-border/50;
+    background: linear-gradient(
+      145deg,
+      hsl(220 50% 10% / 0.8) 0%,
+      hsl(220 50% 6% / 0.9) 100%
+    );
+    backdrop-filter: blur(20px);
+    box-shadow: 
+      0 4px 24px -1px hsl(220 50% 4% / 0.5),
+      inset 0 1px 0 0 hsl(220 30% 25% / 0.1);
+  }
+
+  .glass-panel-hover {
+    @apply glass-panel transition-all duration-300;
+  }
+
+  .glass-panel-hover:hover {
+    border-color: hsl(217 91% 60% / 0.3);
+    box-shadow: 
+      0 4px 24px -1px hsl(220 50% 4% / 0.5),
+      0 0 40px -10px hsl(217 91% 60% / 0.15),
+      inset 0 1px 0 0 hsl(220 30% 25% / 0.1);
+  }
+
+  /* Legacy glass-card for compatibility */
+  .glass-card {
+    @apply glass-panel;
+  }
+
+  .glass-card-hover {
+    @apply glass-panel-hover;
+  }
+
+  /* Neon pill styles */
+  .pill-active {
+    @apply relative px-4 py-2 rounded-full font-medium text-sm;
+    background: linear-gradient(135deg, hsl(217 91% 60%) 0%, hsl(262 83% 58%) 100%);
+    color: white;
+    box-shadow: 0 0 20px -5px hsl(217 91% 60% / 0.5);
+  }
+
+  .pill-inactive {
+    @apply px-4 py-2 rounded-full font-medium text-sm;
+    background: hsl(220 30% 15% / 0.6);
+    border: 1px solid hsl(220 30% 20%);
+    color: hsl(215 20% 65%);
+    transition: all 0.2s ease;
+  }
+
+  .pill-inactive:hover {
+    background: hsl(220 30% 18% / 0.8);
+    border-color: hsl(217 91% 60% / 0.3);
+    color: hsl(210 40% 98%);
+  }
+
+  /* Status pills */
+  .status-pill {
+    @apply px-3 py-1 rounded-full text-xs font-medium uppercase tracking-wider;
+  }
+
+  .status-idle {
+    @apply bg-muted text-muted-foreground;
+  }
+
+  .status-running {
+    background: hsl(142 76% 45% / 0.2);
+    color: hsl(142 76% 55%);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  .status-paused {
+    background: hsl(38 92% 50% / 0.2);
+    color: hsl(38 92% 60%);
+  }
+
+  .status-error {
+    background: hsl(0 84% 60% / 0.2);
+    color: hsl(0 84% 65%);
+  }
+
+  /* Metric display */
+  .metric-value {
+    @apply font-mono text-2xl font-semibold tabular-nums text-foreground;
+  }
+
+  .metric-label {
+    @apply text-xs text-muted-foreground uppercase tracking-wider;
+  }
+
+  /* P&L colors */
+  .profit-text {
+    color: hsl(142 76% 55%);
+  }
+
+  .loss-text {
+    color: hsl(0 84% 65%);
+  }
+
+  .neutral-text {
+    @apply text-muted-foreground;
+  }
+
+  /* Glow button */
+  .btn-glow {
+    @apply relative overflow-hidden;
+    box-shadow: 0 0 20px -5px hsl(217 91% 60% / 0.4);
+  }
+
+  .btn-glow:hover {
+    box-shadow: 0 0 30px -5px hsl(217 91% 60% / 0.6);
+  }
+
+  /* ========================================
+     COCKPIT PANEL - Ultra Compact Trading Controls
+     ======================================== */
+
+  .cockpit-panel {
+    @apply rounded-xl p-2.5 space-y-1.5;
+    background: linear-gradient(135deg, hsl(var(--card) / 0.8), hsl(var(--card) / 0.6));
+    backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--border) / 0.3);
+    box-shadow: 
+      0 2px 12px hsl(var(--primary) / 0.05),
+      inset 0 1px 0 hsl(var(--foreground) / 0.02);
+  }
+
+  /* Ticker Strip */
+  .ticker-strip {
+    @apply flex items-center gap-1.5 text-xs;
+  }
+  .ticker-symbol {
+    @apply font-semibold text-foreground;
+  }
+  .ticker-sep {
+    @apply text-muted-foreground/50;
+  }
+  .ticker-price {
+    @apply font-mono text-foreground;
+  }
+  .ticker-change {
+    @apply font-mono font-medium;
+  }
+  .ticker-change.positive {
+    color: hsl(var(--success));
+  }
+  .ticker-change.negative {
+    color: hsl(var(--destructive));
+  }
+  .ticker-tf {
+    @apply text-muted-foreground text-[10px];
+  }
+
+  /* Mode Pills */
+  .mode-row {
+    @apply flex gap-1.5;
+  }
+  .mode-pill {
+    @apply flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-md text-[11px] font-semibold uppercase tracking-wide transition-all;
+    background: hsl(var(--muted) / 0.3);
+    border: 1px solid hsl(var(--border) / 0.3);
+    color: hsl(var(--muted-foreground));
+  }
+  .mode-pill:hover:not(:disabled) {
+    background: hsl(var(--muted) / 0.5);
+    color: hsl(var(--foreground));
+  }
+  .mode-pill-active {
+    background: hsl(var(--primary) / 0.15);
+    border-color: hsl(var(--primary) / 0.5);
+    color: hsl(var(--primary));
+    box-shadow: 0 0 10px hsl(var(--primary) / 0.25);
+  }
+  .mode-pill:disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
+
+  /* AI Status Line */
+  .ai-status-line {
+    @apply flex items-center flex-wrap gap-x-1.5 gap-y-0.5 text-[10px] text-muted-foreground px-1;
+  }
+  .ai-label {
+    @apply font-medium text-foreground;
+  }
+  .ai-active {
+    color: hsl(var(--success));
+    @apply font-semibold;
+  }
+  .ai-sep {
+    @apply text-muted-foreground/40;
+  }
+  .ai-value {
+    @apply text-foreground font-medium;
+  }
+
+  /* Control Grid */
+  .control-grid {
+    @apply grid grid-cols-2 gap-1.5;
+  }
+  .ctrl-btn {
+    @apply flex items-center justify-center gap-1 py-2 px-2 rounded-md text-[11px] font-bold uppercase tracking-wide transition-all;
+    border: 1px solid transparent;
+  }
+  .ctrl-btn:disabled {
+    @apply opacity-35 cursor-not-allowed pointer-events-none;
+  }
+
+  .ctrl-btn-primary {
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+  }
+  .ctrl-btn-primary:hover:not(:disabled) {
+    background: hsl(var(--primary) / 0.9);
+    box-shadow: 0 0 16px hsl(var(--primary) / 0.4);
+  }
+  .ctrl-btn-primary.ctrl-btn-active {
+    background: hsl(var(--primary));
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.5);
+  }
+
+  .ctrl-btn-success {
+    background: hsl(var(--success));
+    color: hsl(0 0% 100%);
+  }
+  .ctrl-btn-success:hover:not(:disabled) {
+    background: hsl(var(--success) / 0.9);
+    box-shadow: 0 0 16px hsl(var(--success) / 0.4);
+  }
+
+  .ctrl-btn-outline {
+    background: transparent;
+    border-color: hsl(var(--border));
+    color: hsl(var(--foreground));
+  }
+  .ctrl-btn-outline:hover:not(:disabled) {
+    background: hsl(var(--muted) / 0.3);
+    border-color: hsl(var(--foreground) / 0.3);
+  }
+  .ctrl-btn-holding {
+    background: hsl(var(--warning) / 0.2);
+    border-color: hsl(var(--warning) / 0.5);
+    color: hsl(var(--warning));
+  }
+
+  .ctrl-btn-danger {
+    background: hsl(var(--destructive) / 0.9);
+    color: hsl(0 0% 100%);
+  }
+  .ctrl-btn-danger:hover:not(:disabled) {
+    background: hsl(var(--destructive));
+    box-shadow: 0 0 16px hsl(var(--destructive) / 0.4);
+  }
+
+  /* Session Row */
+  .session-row {
+    @apply flex items-center flex-wrap gap-x-1.5 gap-y-0.5 text-[10px] text-muted-foreground px-1 pt-1 border-t border-border/20;
+  }
+  .session-label {
+    @apply font-medium;
+  }
+  .session-status {
+    @apply font-bold uppercase;
+  }
+  .session-sep {
+    @apply text-muted-foreground/40;
+  }
+  .session-pnl {
+    @apply font-semibold;
+  }
+  .session-trades {
+    @apply text-foreground font-medium;
+  }
+  .session-open {
+    @apply font-semibold;
+  }
+
+  /* Legacy Control Bar Buttons (kept for compatibility) */
+  .control-btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all duration-200;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .control-btn-primary {
+    @apply bg-primary/20 text-primary border border-primary/30;
+  }
+
+  .control-btn-primary:hover:not(:disabled) {
+    @apply bg-primary/30 border-primary/50;
+  }
+
+  .control-btn-active {
+    @apply bg-primary text-primary-foreground border-primary;
+    box-shadow: 0 0 20px -5px hsl(217 91% 60% / 0.5);
+  }
+
+  .control-btn-success {
+    background: hsl(142 76% 45% / 0.15);
+    color: hsl(142 76% 55%);
+    border: 1px solid hsl(142 76% 45% / 0.3);
+  }
+
+  .control-btn-success:hover:not(:disabled) {
+    background: hsl(142 76% 45% / 0.25);
+    border-color: hsl(142 76% 45% / 0.5);
+  }
+
+  .control-btn-wide {
+    @apply px-6;
+  }
+
+  .control-btn-outline {
+    @apply bg-transparent text-muted-foreground border border-border/50;
+  }
+
+  .control-btn-outline:hover:not(:disabled) {
+    @apply text-foreground border-border;
+  }
+
+  .control-btn-holding {
+    background: hsl(38 92% 50% / 0.15);
+    color: hsl(38 92% 60%);
+    border-color: hsl(38 92% 50% / 0.3);
+  }
+
+  .control-btn-danger {
+    background: hsl(0 84% 60% / 0.12);
+    color: hsl(0 84% 65%);
+    border: 1px solid hsl(0 84% 60% / 0.25);
+  }
+
+  .control-btn-danger:hover:not(:disabled) {
+    background: hsl(0 84% 60% / 0.2);
+    border-color: hsl(0 84% 60% / 0.4);
+  }
+
+  /* Mode Cards */
+  .mode-card {
+    @apply flex flex-col items-center justify-center p-4 rounded-xl transition-all duration-200;
+    @apply bg-muted/20 border border-border/30;
+  }
+
+  .mode-card:hover:not(:disabled) {
+    @apply border-border/50 bg-muted/30;
+  }
+
+  .mode-card-active {
+    @apply border-primary/40 bg-primary/10;
+    box-shadow: 0 0 24px -8px hsl(217 91% 60% / 0.3);
+  }
+
+  /* AI Engine Strip */
+  .ai-engine-strip {
+    @apply flex items-center justify-between px-4 py-2.5 rounded-xl;
+    @apply bg-muted/20 border border-border/30;
+  }
+
+  /* AI Strip Compact */
+  .ai-strip-compact {
+    @apply flex items-center justify-between gap-2 text-xs;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+
+  .ai-strip-sep {
+    @apply text-slate-600;
+  }
+
+  /* Gradient border effect */
+  .gradient-border {
+    @apply relative;
+  }
+
+  .gradient-border::before {
+    content: '';
+    @apply absolute inset-0 rounded-2xl p-[1px] -z-10;
+    background: linear-gradient(135deg, hsl(217 91% 60%) 0%, hsl(262 83% 58%) 100%);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+  }
+
+  /* Chart grid */
+  .chart-grid {
+    background-image: 
+      linear-gradient(hsl(220 30% 15% / 0.5) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(220 30% 15% / 0.5) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* Scrollbar styling */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: hsl(220 30% 10%);
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(220 30% 25%);
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(217 91% 60% / 0.5);
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(217 91% 60%) 0%, hsl(262 83% 58%) 100%);
+  }
+
+  .bg-gradient-terminal {
+    background: linear-gradient(180deg, hsl(220 50% 3%) 0%, hsl(220 50% 7%) 100%);
+  }
+
+  .bg-gradient-card {
+    background: linear-gradient(
+      145deg,
+      hsl(220 50% 10% / 0.8) 0%,
+      hsl(220 50% 6% / 0.9) 100%
+    );
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  .animate-glow {
+    animation: glow 2s ease-in-out infinite;
+  }
+
+  @keyframes glow {
+    0%, 100% { 
+      box-shadow: 0 0 20px -5px hsl(217 91% 60% / 0.4);
+    }
+    50% { 
+      box-shadow: 0 0 30px -5px hsl(217 91% 60% / 0.6);
+    }
+  }
+}
