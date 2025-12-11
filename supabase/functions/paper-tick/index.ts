@@ -29,8 +29,8 @@ const DEFAULT_MODE_CONFIG = {
 };
 
 const DEFAULT_MARKET_CONFIG = {
-  selectedSymbols: ['BTCUSDT', 'ETHUSDT', 'EURUSD', 'XAUUSD'],
-  typeFilters: { crypto: true, forex: true, index: true, metal: true },
+  selectedSymbols: ['BTCUSD', 'ETHUSD'],
+  typeFilters: { crypto: true, forex: false, index: false, metal: false },
 };
 
 // ============== Types ==============

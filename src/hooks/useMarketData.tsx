@@ -73,17 +73,10 @@ function generateDummyOHLC(basePrice: number, periods: number = 50): OHLC[] {
   return data;
 }
 
-// Dummy market data for different symbols
+// Market data for crypto symbols only
 const DUMMY_MARKETS: Record<string, { price: number; change: number }> = {
-  'BTCUSDT': { price: 67432.50, change: 2.45 },
-  'ETHUSDT': { price: 3521.80, change: 1.82 },
-  'BNBUSDT': { price: 612.40, change: -0.65 },
-  'SOLUSDT': { price: 178.25, change: 5.12 },
-  'XRPUSDT': { price: 0.5234, change: -1.23 },
-  'EURUSD': { price: 1.0892, change: 0.15 },
-  'GBPUSD': { price: 1.2745, change: -0.22 },
-  'USDJPY': { price: 154.32, change: 0.45 },
-  'XAUUSD': { price: 2345.60, change: 0.85 },
+  'BTCUSD': { price: 91085.77, change: 2.45 },
+  'ETHUSD': { price: 3208.28, change: 1.82 },
 };
 
 export function useMarketData(symbolOverride?: string): MarketDataResult {
