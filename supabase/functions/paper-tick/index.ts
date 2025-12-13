@@ -8,10 +8,9 @@ const corsHeaders = {
 };
 
 // ============== Default Configs ==============
-// Furnace Exit Engine v1 — tightened daily loss limit
 
 const DEFAULT_RISK_CONFIG = {
-  maxDailyLossPercent: 4,             // Furnace v1: was 5
+  maxDailyLossPercent: 5,
   maxConcurrentRiskPercent: 10,
   maxOpenTrades: 20,
   maxPerSymbolExposure: 10,
@@ -126,10 +125,9 @@ interface ModeProfile {
   cutLoserThreshold: number;
 }
 
-// ============== Mode Profiles v1.5 — Furnace Exit Engine v1 ==============
+// ============== Mode Profiles v1.5 ==============
 
 const MODE_PROFILES: Record<TradingModeKey, ModeProfile> = {
-  // Furnace Exit Engine v1 — BURST tuned for tighter exits
   burst: {
     key: 'burst',
     maxConcurrentTradesPerSymbol: 5,
@@ -138,15 +136,15 @@ const MODE_PROFILES: Record<TradingModeKey, ModeProfile> = {
     basePositionSizeFactor: 0.5,
     entryScoreThreshold: 25,
     edgeConfidenceMin: 0.3,
-    defaultStopPercent: 0.30,          // Furnace v1: was 0.40 — tighter SL
-    defaultTPMultiplier: 1.30,         // Furnace v1: was 1.5 — closer TP (~0.39%)
-    maxHoldMinutes: 10,                // Furnace v1: was 15 — reduce age_limit exits
+    defaultStopPercent: 0.4,
+    defaultTPMultiplier: 1.5,
+    maxHoldMinutes: 15,
     preferredStructures: ['trend', 'range'],
     preferredVolatility: ['high', 'normal'],
     allowedInAnyRegime: true,
-    trailingStopActivation: 0.35,      // Furnace v1: was 0.50 — earlier trailing
-    trailingStopDistance: 0.15,        // Furnace v1: was 0.25 — locks ~+0.20%
-    cutLoserThreshold: -0.20,          // Furnace v1: was -0.30 — cut earlier
+    trailingStopActivation: 0.5,
+    trailingStopDistance: 0.25,
+    cutLoserThreshold: -0.3,
   },
   scalper: {
     key: 'scalper',
@@ -998,17 +996,6 @@ serve(async (req) => {
       }).select().single();
       if (createError) throw createError;
       config = newConfig;
-    }
-
-    // ================================================================
-    // FURNACE GUARD: Early bailout if daily loss limit already hit
-    // ================================================================
-    if (config.trading_halted_for_day === true) {
-      console.log('[FURNACE_GUARD] Trading halted for day — no new trades');
-      return new Response(JSON.stringify({ 
-        status: 'halted_for_day',
-        reason: 'Daily loss limit reached',
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const riskConfig = config.risk_config || DEFAULT_RISK_CONFIG;
