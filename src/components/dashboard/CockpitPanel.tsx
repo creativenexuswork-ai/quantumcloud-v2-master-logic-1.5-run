@@ -1,4 +1,5 @@
-import { Zap, Crosshair, TrendingUp, Brain, Loader2, Power, DollarSign, Pause, XCircle, Play } from 'lucide-react';
+import { useState } from 'react';
+import { Zap, Crosshair, TrendingUp, Brain, Loader2, Power, DollarSign, Pause, XCircle, Play, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { 
   useSessionStore, 
@@ -7,6 +8,16 @@ import {
   STATUS_COLORS 
 } from '@/lib/state/sessionMachine';
 import { useSessionActions } from '@/hooks/useSessionActions';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 const MODES: { key: TradingMode; label: string; icon: typeof Zap }[] = [
   { key: 'burst', label: 'Burst', icon: Zap },
@@ -24,6 +35,8 @@ const STATUS_BG: Record<string, string> = {
 };
 
 export function CockpitPanel() {
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  
   const { 
     status, 
     mode, 
@@ -34,11 +47,19 @@ export function CockpitPanel() {
     lastError,
   } = useSessionStore();
   
-  const { buttonStates, activate, holdToggle, takeProfit, closeAll, changeMode } = useSessionActions();
+  const { buttonStates, activate, holdToggle, takeProfit, closeAll, changeMode, resetSession } = useSessionActions();
   const { canActivate, canHold, canTakeProfit, canCloseAll, canChangeMode, showSpinner } = buttonStates;
   
   const isHolding = status === 'holding';
   const isRunning = status === 'running';
+  const isIdle = status === 'idle' || status === 'stopped';
+  const isResetPending = pendingAction === ('reset' as any);
+  const canReset = isIdle && !pendingAction;
+  
+  const handleResetConfirm = async () => {
+    setShowResetConfirm(false);
+    await resetSession();
+  };
 
   return (
     <div className="glass-panel p-3 space-y-3">
@@ -112,8 +133,8 @@ export function CockpitPanel() {
         })}
       </div>
 
-      {/* ROW 3: Control Buttons - 4 in a row */}
-      <div className="grid grid-cols-4 gap-2">
+      {/* ROW 3: Control Buttons - 5 in a row */}
+      <div className="grid grid-cols-5 gap-2">
         {/* ACTIVATE */}
         <button
           onClick={activate}
@@ -193,7 +214,44 @@ export function CockpitPanel() {
           )}
           <span className="hidden sm:inline">Close All</span>
         </button>
+
+        {/* RESTART SESSION */}
+        <button
+          onClick={() => setShowResetConfirm(true)}
+          disabled={!canReset}
+          className={cn(
+            "h-9 rounded-lg flex items-center justify-center gap-1 text-[11px] font-semibold transition-all border",
+            canReset
+              ? "bg-muted/30 border-border/50 text-foreground hover:bg-muted/50" 
+              : "bg-muted/20 border-transparent text-muted-foreground cursor-not-allowed"
+          )}
+        >
+          {isResetPending ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <RotateCcw className="h-3 w-3" />
+          )}
+          <span className="hidden sm:inline">Restart</span>
+        </button>
       </div>
+
+      {/* Reset Confirmation Dialog */}
+      <AlertDialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restart Session?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will reset today's P&L tracking and archive current trades. You'll start with a clean slate.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleResetConfirm}>
+              Restart Session
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Error message if present */}
       {lastError && status === 'error' && (
