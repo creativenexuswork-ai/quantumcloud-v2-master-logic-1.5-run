@@ -1,4 +1,4 @@
-import { Zap, Crosshair, TrendingUp, Brain, Loader2, Power, DollarSign, Pause, XCircle, Play } from 'lucide-react';
+import { Zap, Crosshair, TrendingUp, Brain, Loader2, Power, DollarSign, Pause, XCircle, Play, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { 
   useSessionStore, 
@@ -21,6 +21,7 @@ const STATUS_BG: Record<string, string> = {
   holding: 'bg-amber-500/20 text-amber-300',
   stopped: 'bg-muted/50 text-muted-foreground',
   error: 'bg-destructive/20 text-destructive',
+  locked: 'bg-amber-600/20 text-amber-400',
 };
 
 export function CockpitPanel() {
@@ -32,13 +33,17 @@ export function CockpitPanel() {
     openCount, 
     pendingAction,
     lastError,
+    runActive,
   } = useSessionStore();
   
-  const { buttonStates, activate, holdToggle, takeProfit, closeAll, changeMode } = useSessionActions();
+  const { buttonStates, activate, holdToggle, takeProfit, closeAll, changeMode, restartUnlock } = useSessionActions();
   const { canActivate, canHold, canTakeProfit, canCloseAll, canChangeMode, showSpinner } = buttonStates;
   
   const isHolding = status === 'holding';
   const isRunning = status === 'running';
+  
+  // Show restart button when session is idle/stopped OR when run ended (locked)
+  const canRestart = (status === 'idle' || status === 'stopped' || !runActive) && !pendingAction;
 
   return (
     <div className="glass-panel p-3 space-y-3">
@@ -112,8 +117,8 @@ export function CockpitPanel() {
         })}
       </div>
 
-      {/* ROW 3: Control Buttons - 4 in a row */}
-      <div className="grid grid-cols-4 gap-2">
+      {/* ROW 3: Control Buttons - 5 in a row */}
+      <div className="grid grid-cols-5 gap-2">
         {/* ACTIVATE */}
         <button
           onClick={activate}
@@ -130,7 +135,7 @@ export function CockpitPanel() {
           ) : (
             <Power className="h-3 w-3" />
           )}
-          <span className="hidden sm:inline">Activate</span>
+          <span className="hidden sm:inline">Start</span>
         </button>
 
         {/* HOLD */}
@@ -172,7 +177,7 @@ export function CockpitPanel() {
           ) : (
             <DollarSign className="h-3 w-3" />
           )}
-          <span className="hidden sm:inline">Take Profit</span>
+          <span className="hidden sm:inline">TP</span>
         </button>
 
         {/* CLOSE ALL */}
@@ -191,7 +196,26 @@ export function CockpitPanel() {
           ) : (
             <XCircle className="h-3 w-3" />
           )}
-          <span className="hidden sm:inline">Close All</span>
+          <span className="hidden sm:inline">Close</span>
+        </button>
+
+        {/* RESTART/UNLOCK */}
+        <button
+          onClick={restartUnlock}
+          disabled={!canRestart}
+          className={cn(
+            "h-9 rounded-lg flex items-center justify-center gap-1 text-[11px] font-semibold transition-all border",
+            canRestart
+              ? "bg-amber-500/20 border-amber-500/50 text-amber-300 hover:bg-amber-500/30" 
+              : "bg-muted/20 border-transparent text-muted-foreground cursor-not-allowed"
+          )}
+        >
+          {pendingAction === 'restart' ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <RotateCcw className="h-3 w-3" />
+          )}
+          <span className="hidden sm:inline">Unlock</span>
         </button>
       </div>
 
