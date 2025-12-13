@@ -1036,12 +1036,38 @@ serve(async (req) => {
     const modeConfig = config.mode_config || DEFAULT_MODE_CONFIG;
     const marketConfig = config.market_config || DEFAULT_MARKET_CONFIG;
     const sessionStatus: SessionStatus = config.session_status || 'idle';
+    const sessionStartedAt: string | null = config.session_started_at || null;
 
     const { data: dailyStats } = await supabase.from('paper_stats_daily').select('equity_start').eq('user_id', userId).eq('trade_date', today).maybeSingle();
     const { data: account } = await supabase.from('accounts').select('equity').eq('user_id', userId).eq('type', 'paper').maybeSingle();
     const startingEquity = dailyStats?.equity_start ?? account?.equity ?? 10000;
 
     const { data: positions } = await supabase.from('paper_positions').select('*').eq('user_id', userId).eq('closed', false);
+    
+    // ================================================================
+    // SESSION-FILTERED TRADES: Only count trades from current session
+    // This ensures thermostat resets properly on restart
+    // ================================================================
+    let sessionTrades: any[] = [];
+    if (sessionStartedAt) {
+      // Filter trades to only those opened AFTER session_started_at
+      const { data: filteredTrades } = await supabase
+        .from('paper_trades')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('opened_at', sessionStartedAt);
+      sessionTrades = filteredTrades || [];
+    } else {
+      // Fallback: use today's trades if no session boundary
+      const { data: todayTradesData } = await supabase
+        .from('paper_trades')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('session_date', today);
+      sessionTrades = todayTradesData || [];
+    }
+    
+    // Also get all of today's trades for P&L display (different from thermostat input)
     const { data: todayTrades } = await supabase.from('paper_trades').select('*').eq('user_id', userId).eq('session_date', today);
 
     const realizedPnl = (todayTrades || []).reduce((sum: number, t: any) => sum + Number(t.realized_pnl), 0);
@@ -1212,9 +1238,10 @@ serve(async (req) => {
         selectedMode = enabledModes.find(m => m !== 'burst') || 'scalper';
       }
       
-      console.log(`[ENGINE] Running Master Logic v1.5 with mode=${selectedMode}, symbols=${symbolsWithData.length} (of ${symbolsToTrade.length} configured)`);
+      console.log(`[ENGINE] Running Master Logic v1.5 with mode=${selectedMode}, symbols=${symbolsWithData.length} (of ${symbolsToTrade.length} configured), sessionTrades=${sessionTrades.length}`);
       
-      // Run Master Logic v1.5
+      // Run Master Logic v1.5 with SESSION-FILTERED TRADES for thermostat
+      // This ensures restart = fresh thermostat state
       const result = runMasterLogicV15({
         selectedMode,
         symbols: symbolsWithData,
@@ -1223,7 +1250,7 @@ serve(async (req) => {
         baseRiskPercent: riskConfig.riskPerTrade || 2,
         maxOpenTrades: riskConfig.maxOpenTrades || 20,
         openPositions: (finalPositions || []) as Position[],
-        recentTrades: finalTrades || [],
+        recentTrades: sessionTrades, // SESSION-FILTERED, not all today's trades
         todayPnlPercent: finalTodayPnlPercent,
       });
       

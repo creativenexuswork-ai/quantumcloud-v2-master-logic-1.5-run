@@ -62,6 +62,26 @@ let lastAdaptiveMode: ModePersonality | null = null;
 // Warm-start flag - first cycle MUST fire
 let warmStart = true;
 
+/**
+ * Reset all in-memory engine state for a fresh session.
+ * MUST be called on:
+ * - User restart/reset
+ * - Close All (session end)
+ * - Any session boundary transition
+ */
+export function resetEngineMemory(reason: string): void {
+  console.log(`[ENGINE] resetEngineMemory: ${reason}`);
+  
+  // Reset warm-start (enables first-fire boost)
+  warmStart = true;
+  
+  // Reset thermostat to initial state (fresh aggression, no streak)
+  thermostatState = getInitialThermostatState();
+  
+  // Clear adaptive mode selection
+  lastAdaptiveMode = null;
+}
+
 export function resetWarmStart(): void {
   warmStart = true;
 }

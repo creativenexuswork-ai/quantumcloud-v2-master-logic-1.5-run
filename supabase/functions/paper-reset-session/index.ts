@@ -46,13 +46,15 @@ Deno.serve(async (req) => {
     const serviceClient = createClient(supabaseUrl, supabaseServiceKey);
 
     // 1) Reset paper_config session state
+    // Set session_started_at to NOW so next activation knows to start fresh
+    // When activate runs, it will set a new session_started_at
     const { error: configError } = await serviceClient
       .from('paper_config')
       .update({
         is_running: false,
         session_status: 'idle',
         burst_requested: false,
-        session_started_at: null,
+        session_started_at: null, // Will be set fresh on next activate
         updated_at: new Date().toISOString(),
       })
       .eq('user_id', userId);
