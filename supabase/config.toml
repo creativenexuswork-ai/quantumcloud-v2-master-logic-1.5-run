@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.paper-stats]
 verify_jwt = false
+
+[functions.paper-reset-session]
+verify_jwt = false

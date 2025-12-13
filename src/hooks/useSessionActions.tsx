@@ -681,25 +681,43 @@ export function useSessionActions() {
     });
   }, [dispatch]);
 
-  // Reset session (clear state, reset to idle)
+  // Reset session via edge function - full server-side reset
   const resetSession = useCallback(async () => {
-    clearTickInterval();
-    clearPnlRefresh();
-    clearAutoTpCheck();
+    dispatch({ type: 'SET_PENDING_ACTION', pendingAction: 'reset' as any });
     
-    dispatch({ type: 'RESET' });
-    
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      await supabase.from('paper_config').update({
-        is_running: false,
-        session_status: 'idle',
-        burst_requested: false,
-      } as any).eq('user_id', user.id);
+    try {
+      clearTickInterval();
+      clearPnlRefresh();
+      clearAutoTpCheck();
+      
+      // Call edge function for server-side reset
+      const { data, error } = await supabase.functions.invoke('paper-reset-session');
+      
+      if (error) {
+        console.error('[RESET] Edge function error:', error);
+        toast({ title: 'Error', description: 'Failed to reset session', variant: 'destructive' });
+        return;
+      }
+      
+      if (!data?.ok) {
+        toast({ title: 'Error', description: data?.error || 'Reset failed', variant: 'destructive' });
+        return;
+      }
+      
+      // Reset local state
+      dispatch({ type: 'RESET' });
+      
+      // Refresh stats
+      queryClient.invalidateQueries({ queryKey: ['paper-stats'] });
+      
+      toast({ title: 'Session Reset', description: 'Ready to start fresh' });
+    } catch (error) {
+      console.error('[RESET] Error:', error);
+      toast({ title: 'Error', description: 'Failed to reset session', variant: 'destructive' });
+    } finally {
+      dispatch({ type: 'SET_PENDING_ACTION', pendingAction: null });
     }
-    
-    toast({ title: 'Session Reset', description: 'Ready to trade again' });
-  }, [dispatch, clearTickInterval, clearPnlRefresh, clearAutoTpCheck]);
+  }, [dispatch, clearTickInterval, clearPnlRefresh, clearAutoTpCheck, queryClient]);
 
   // Cleanup on unmount
   useEffect(() => {
