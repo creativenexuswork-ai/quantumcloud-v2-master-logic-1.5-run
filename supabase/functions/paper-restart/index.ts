@@ -51,6 +51,26 @@ serve(async (req) => {
       .single();
 
     const currentEquity = account?.equity || 10000;
+    const today = new Date().toISOString().split('T')[0];
+
+    // ================================================================
+    // DELETE TODAY'S TRADES (clears burst lock calculation)
+    // Must use service role to bypass RLS (paper_trades blocks DELETE)
+    // ================================================================
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+    
+    const { error: deleteError, count: deletedCount } = await supabaseAdmin
+      .from('paper_trades')
+      .delete()
+      .eq('user_id', userId)
+      .eq('session_date', today);
+    
+    if (deleteError) {
+      console.error('[RESTART] Failed to delete today trades:', deleteError);
+    } else {
+      console.log(`[RESTART] Deleted ${deletedCount ?? 0} trades for session_date=${today}`);
+    }
 
     // Update paper_config to reset session state
     const { error: configError } = await supabase
@@ -73,7 +93,6 @@ serve(async (req) => {
     }
 
     // Reset today's stats in paper_stats_daily
-    const today = new Date().toISOString().split('T')[0];
     const { data: existingStats } = await supabase
       .from('paper_stats_daily')
       .select('id')
