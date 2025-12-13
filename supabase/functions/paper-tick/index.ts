@@ -326,14 +326,30 @@ function updateThermostat(
     regimeTag: 'NORMAL',
   };
   
+  // Manual exit reasons that should be neutral when PnL < 0
+  const NEUTRAL_REASONS = ['take_profit', 'global_close', 'take_burst_profit'];
+  
   const recentCount = recentTrades.length;
   if (recentCount > 0) {
-    const wins = recentTrades.filter(tr => Number(tr.realized_pnl) > 0).length;
-    t.recentWinRate = (wins / recentCount) * 100;
+    // Count wins/losses, treating manual negative closes as neutral
+    let wins = 0;
+    let countedTrades = 0;
+    for (const tr of recentTrades) {
+      const pnl = Number(tr.realized_pnl);
+      const isManualNegative = NEUTRAL_REASONS.includes(tr.reason) && pnl < 0;
+      if (isManualNegative) continue; // Skip neutral trades entirely
+      countedTrades++;
+      if (pnl > 0) wins++;
+    }
+    t.recentWinRate = countedTrades > 0 ? (wins / countedTrades) * 100 : 50;
     
+    // Streak calculation - manual negative closes don't break/extend streaks
     let streak = 0;
     for (let i = recentTrades.length - 1; i >= 0 && i >= recentTrades.length - 5; i--) {
-      const pnl = Number(recentTrades[i].realized_pnl);
+      const tr = recentTrades[i];
+      const pnl = Number(tr.realized_pnl);
+      const isManualNegative = NEUTRAL_REASONS.includes(tr.reason) && pnl < 0;
+      if (isManualNegative) continue; // Skip neutral trades
       if (pnl > 0) {
         if (streak >= 0) streak++;
         else break;
