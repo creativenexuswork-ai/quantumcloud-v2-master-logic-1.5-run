@@ -6,7 +6,7 @@ export type TradingMode = 'burst' | 'scalper' | 'trend';
 export type AccountType = 'paper' | 'live';
 
 // pendingAction is set ONLY during explicit user actions, NOT during polling
-export type PendingAction = 'activate' | 'hold' | 'takeProfit' | 'closeAll' | 'restart' | null;
+export type PendingAction = 'activate' | 'hold' | 'takeProfit' | 'closeAll' | null;
 
 // Auto-TP mode types (only 3: off, percent, cash)
 export type AutoTpMode = 'off' | 'percent' | 'cash';

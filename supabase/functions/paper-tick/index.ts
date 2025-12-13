@@ -154,7 +154,7 @@ const MODE_PROFILES: Record<TradingModeKey, ModeProfile> = {
     entryScoreThreshold: 25,
     edgeConfidenceMin: 0.3,
     defaultStopPercent: 0.4,
-    defaultTPMultiplier: 2.0,  // Raised from 1.5 for better R:R
+    defaultTPMultiplier: 1.5,
     maxHoldMinutes: 15,
     preferredStructures: ['trend', 'range'],
     preferredVolatility: ['high', 'normal'],
@@ -172,7 +172,7 @@ const MODE_PROFILES: Record<TradingModeKey, ModeProfile> = {
     entryScoreThreshold: 35,
     edgeConfidenceMin: 0.4,
     defaultStopPercent: 0.25,
-    defaultTPMultiplier: 2.0,  // Raised from 1.5 for better R:R
+    defaultTPMultiplier: 1.5,
     maxHoldMinutes: 10,
     preferredStructures: ['range', 'trend'],
     preferredVolatility: ['normal', 'high'],

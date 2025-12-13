@@ -131,8 +131,8 @@ function evaluateWinningTrade(
   
   // Mode-specific profit taking thresholds
   const profitThresholds: Record<ModePersonality, { quick: number; target: number; runner: number }> = {
-    burst: { quick: 0.5, target: 0.8, runner: 1.2 },    // Raised: let winners run longer
-    scalper: { quick: 0.7, target: 1.2, runner: 1.8 },  // Raised: reduce premature exits
+    burst: { quick: 0.3, target: 0.6, runner: 1.0 },
+    scalper: { quick: 0.5, target: 1.0, runner: 1.5 },
     trend: { quick: 1.0, target: 2.0, runner: 4.0 }
   };
   
@@ -140,12 +140,10 @@ function evaluateWinningTrade(
   
   // Burst mode: quick profits, don't let winners reverse
   if (mode === 'burst') {
-    // Only close on quick profit if momentum against AND confidence weak
-    const shouldCloseEarly = momentum === 'against' && edge.edgeConfidence < 0.55;
-    if (pnlPct >= thresholds.target || (shouldCloseEarly && pnlPct >= thresholds.quick)) {
+    if (pnlPct >= thresholds.target || (momentum !== 'with' && pnlPct >= thresholds.quick)) {
       return {
         action: 'close',
-        reason: 'Burst target reached or momentum reversing',
+        reason: 'Burst target reached or momentum slowing',
         priority: 6
       };
     }
@@ -175,19 +173,18 @@ function evaluateWinningTrade(
   
   // Scalper mode: moderate holds
   if (mode === 'scalper') {
-    // Only close early if momentum against AND confidence weak
-    const shouldCloseEarly = momentum === 'against' && edge.edgeConfidence < 0.55;
-    if (shouldCloseEarly && pnlPct >= thresholds.quick) {
+    // Take profit if momentum stalling
+    if (momentum !== 'with' && pnlPct >= thresholds.quick) {
       if (pnlPct >= thresholds.target) {
         return {
           action: 'close',
-          reason: 'Target reached, momentum reversing',
+          reason: 'Target reached, momentum neutral',
           priority: 5
         };
       } else {
         return {
           action: 'partial_close',
-          reason: 'Partial profit - momentum reversing',
+          reason: 'Partial profit - momentum slowing',
           closePercent: 50,
           priority: 4
         };

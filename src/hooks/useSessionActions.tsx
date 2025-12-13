@@ -701,68 +701,6 @@ export function useSessionActions() {
     toast({ title: 'Session Reset', description: 'Ready to trade again' });
   }, [dispatch, clearTickInterval, clearPnlRefresh, clearAutoTpCheck]);
 
-  // ================================================================
-  // RESTART/UNLOCK - Hard reset for locked sessions (daily target reached)
-  // ================================================================
-  const restartUnlock = useCallback(async () => {
-    dispatch({ type: 'SET_PENDING_ACTION', pendingAction: 'restart' });
-    
-    try {
-      // Stop all intervals
-      clearTickInterval();
-      clearPnlRefresh();
-      clearAutoTpCheck();
-      
-      // Call server-side restart function
-      const { data, error } = await supabase.functions.invoke('paper-restart');
-      
-      if (error) {
-        console.error('[RESTART] Error:', error);
-        toast({ 
-          title: 'Restart Failed', 
-          description: error.message || 'Failed to restart session',
-          variant: 'destructive'
-        });
-        dispatch({ type: 'SET_PENDING_ACTION', pendingAction: null });
-        return;
-      }
-      
-      if (!data?.ok) {
-        toast({ 
-          title: 'Restart Failed', 
-          description: data?.error || 'Unknown error',
-          variant: 'destructive'
-        });
-        dispatch({ type: 'SET_PENDING_ACTION', pendingAction: null });
-        return;
-      }
-      
-      // Force local UI state to IDLE
-      dispatch({ type: 'RESET' });
-      
-      // Refetch session state
-      queryClient.invalidateQueries({ queryKey: ['paper-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['system-logs'] });
-      
-      toast({ 
-        title: 'Restart Complete', 
-        description: 'Session unlocked. Press Start to begin trading.' 
-      });
-      
-      console.log('[RESTART] Success:', data);
-      
-    } catch (error) {
-      console.error('[RESTART] Exception:', error);
-      toast({ 
-        title: 'Restart Failed', 
-        description: 'Unexpected error during restart',
-        variant: 'destructive'
-      });
-    } finally {
-      dispatch({ type: 'SET_PENDING_ACTION', pendingAction: null });
-    }
-  }, [dispatch, clearTickInterval, clearPnlRefresh, clearAutoTpCheck, queryClient]);
-
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -780,7 +718,6 @@ export function useSessionActions() {
     closeAll,
     changeMode,
     resetSession,
-    restartUnlock,
     refreshPnl,
   };
 }
