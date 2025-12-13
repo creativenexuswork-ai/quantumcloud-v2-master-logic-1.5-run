@@ -1019,35 +1019,7 @@ serve(async (req) => {
     const wins = (todayTrades || []).filter((t: any) => Number(t.realized_pnl) > 0).length;
     const winRate = closedCount > 0 ? (wins / closedCount) * 100 : 50;
 
-    // Check daily loss limit
-    const isHalted = currentPnlPercent <= -riskConfig.maxDailyLossPercent;
-    
-    if (isHalted && !config.trading_halted_for_day) {
-      await supabase.from('system_logs').insert({
-        user_id: userId, level: 'error', source: 'risk',
-        message: `RISK: Trading HALTED - Daily loss limit of ${riskConfig.maxDailyLossPercent}% reached`,
-        meta: { currentPnlPercent, limit: riskConfig.maxDailyLossPercent },
-      });
-
-      for (const pos of (positions || [])) {
-        const tick = ticks[pos.symbol];
-        const exitPrice = tick ? (pos.side === 'long' ? tick.bid : tick.ask) : Number(pos.entry_price);
-        const priceDiff = pos.side === 'long' ? exitPrice - Number(pos.entry_price) : Number(pos.entry_price) - exitPrice;
-        const pnl = priceDiff * Number(pos.size);
-
-        await supabase.from('paper_trades').insert({
-          user_id: userId, symbol: pos.symbol, mode: pos.mode, side: pos.side,
-          size: pos.size, entry_price: pos.entry_price, exit_price: exitPrice,
-          sl: pos.sl, tp: pos.tp, opened_at: pos.opened_at,
-          realized_pnl: pnl, reason: 'risk_halt', session_date: today, batch_id: pos.batch_id,
-        });
-        await supabase.from('paper_positions').delete().eq('id', pos.id);
-      }
-
-      await supabase.from('paper_config').update({ 
-        trading_halted_for_day: true, session_status: 'idle', is_running: false 
-      }).eq('user_id', userId);
-    }
+    // Daily halt logic REMOVED - engine runs indefinitely
 
     // Handle take burst profit
     if (takeBurstProfit) {
@@ -1122,7 +1094,7 @@ serve(async (req) => {
     const freshSessionStatus: SessionStatus = freshConfig?.session_status || 'idle';
     const freshIsRunning = freshConfig?.is_running ?? false;
     
-    const shouldRunModes = freshSessionStatus === 'running' && freshIsRunning && !isHalted && !config.trading_halted_for_day;
+    const shouldRunModes = freshSessionStatus === 'running' && freshIsRunning;
     
     console.log(`[ENGINE] status=${freshSessionStatus}, running=${freshIsRunning}, shouldRunModes=${shouldRunModes}, positions=${(finalPositions || []).length}`);
     
@@ -1278,7 +1250,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       success: true, 
       sessionStatus: freshSessionStatus,
-      halted: isHalted,
+      halted: false,
       stats: {
         todayPnl: finalTodayPnl,
         todayPnlPercent: finalTodayPnlPercent,

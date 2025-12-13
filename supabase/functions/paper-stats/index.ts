@@ -50,7 +50,7 @@ serve(async (req) => {
           risk_config: { maxDailyLossPercent: 5, maxConcurrentRiskPercent: 10 },
           burst_config: { size: 20, dailyProfitTargetPercent: 8 },
           mode_config: { enabledModes: ['trend'], modeSettings: {} },
-          market_config: { selectedSymbols: ['BTCUSDT', 'ETHUSDT'], typeFilters: { crypto: true, forex: true, index: true, metal: true } },
+          market_config: { selectedSymbols: ['BTCUSD', 'ETHUSD'], typeFilters: { crypto: true } },
           is_running: false,
         })
         .select()
@@ -137,12 +137,10 @@ serve(async (req) => {
 
     const burstPositions = (positions || []).filter((p: any) => p.mode === 'burst');
     const burstConfig = config?.burst_config || { dailyProfitTargetPercent: 8 };
-    const riskConfig = config?.risk_config || { maxDailyLossPercent: 5 };
     const burstStatus = burstPositions.length > 0 
       ? 'running' 
       : burstPnlPercent >= burstConfig.dailyProfitTargetPercent ? 'locked' : 'idle';
 
-    const isHalted = todayPnlPercent <= -riskConfig.maxDailyLossPercent || config?.trading_halted_for_day;
     const sessionStatus = config?.session_status || 'idle';
 
     const stats = {
@@ -171,14 +169,13 @@ serve(async (req) => {
         burst_config: config.burst_config,
         mode_config: config.mode_config,
         market_config: config.market_config,
-        trading_halted_for_day: config.trading_halted_for_day,
         burst_requested: config.burst_requested,
         use_ai_reasoning: config.use_ai_reasoning,
         show_advanced_explanations: config.show_advanced_explanations,
         is_running: config.is_running,
         session_status: config.session_status,
       } : null,
-      halted: isHalted,
+      halted: false,
       sessionStatus,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

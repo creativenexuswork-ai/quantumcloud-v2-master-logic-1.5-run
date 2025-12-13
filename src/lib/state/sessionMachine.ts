@@ -22,7 +22,6 @@ export interface SessionState {
   winRate: number;
   equity: number;
   lastError: string | null;
-  halted: boolean;
   // pendingAction: set only during user-initiated transitions (not polling)
   pendingAction: PendingAction;
   
@@ -63,7 +62,6 @@ export function getInitialSessionState(): SessionState {
     winRate: 0,
     equity: 10000,
     lastError: null,
-    halted: false,
     pendingAction: null,
     // Run lifecycle - all reset
     runId: null,
@@ -79,7 +77,7 @@ export function getInitialSessionState(): SessionState {
 }
 
 export function getButtonStates(session: SessionState): ButtonStates {
-  const { status, hasPositions, pendingAction, halted, openCount } = session;
+  const { status, hasPositions, pendingAction, openCount } = session;
   
   // CRITICAL: When ANY action is in progress, ALL control buttons are disabled
   // This prevents flashing/re-triggering during TP or CloseAll operations
@@ -88,8 +86,8 @@ export function getButtonStates(session: SessionState): ButtonStates {
   
   return {
     // ACTIVATE: when idle, stopped, OR holding (acts as Resume from holding)
-    // Disabled if ANY action is pending, or halted
-    canActivate: (status === 'idle' || status === 'stopped' || status === 'holding') && !isActionInProgress && !halted,
+    // Disabled if ANY action is pending
+    canActivate: (status === 'idle' || status === 'stopped' || status === 'holding') && !isActionInProgress,
     
     // HOLD: only when running, disabled if ANY action is pending
     canHold: status === 'running' && !isActionInProgress,
@@ -120,7 +118,6 @@ export type SessionAction =
   | { type: 'SET_MODE'; mode: TradingMode }
   | { type: 'SYNC_POSITIONS'; hasPositions: boolean; openCount: number }
   | { type: 'SYNC_PNL'; pnlToday: number; tradesToday: number; winRate: number; equity: number }
-  | { type: 'SET_HALTED'; halted: boolean }
   | { type: 'SET_PENDING_ACTION'; pendingAction: PendingAction }
   | { type: 'SYNC_STATUS'; status: SessionStatus }
   // Run lifecycle actions
@@ -198,15 +195,6 @@ export function transitionSession(state: SessionState, action: SessionAction): S
         tradesToday: action.tradesToday,
         winRate: action.winRate,
         equity: action.equity,
-      };
-    
-    case 'SET_HALTED':
-      return { 
-        ...state, 
-        halted: action.halted,
-        // If halted, also set to idle and clear pending action
-        status: action.halted ? 'idle' : state.status,
-        pendingAction: action.halted ? null : state.pendingAction,
       };
     
     case 'SET_PENDING_ACTION':

@@ -4,7 +4,7 @@ import { useSessionStore } from '@/lib/state/sessionMachine';
 
 /**
  * Hook to sync session data from backend paper-stats polling.
- * Syncs P&L, positions, stats, and halted state.
+ * Syncs P&L, positions, stats.
  * Also syncs session status from backend IF it's a "terminal" state (idle/stopped)
  * to ensure Close All and Take Profit state changes are reflected.
  */
@@ -37,11 +37,6 @@ export function useSessionSync() {
         winRate: stats.winRate || 0,
         equity: stats.equity || 10000,
       });
-    }
-
-    // Sync halted state from backend
-    if (paperData.halted !== undefined) {
-      dispatch({ type: 'SET_HALTED', halted: paperData.halted });
     }
 
     // Sync session status from backend ONLY for terminal states (idle/stopped)
