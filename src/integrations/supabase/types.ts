@@ -216,7 +216,6 @@ export type Database = {
           session_started_at: string | null
           session_status: string | null
           show_advanced_explanations: boolean | null
-          trading_halted_for_day: boolean | null
           updated_at: string | null
           use_ai_reasoning: boolean | null
           user_id: string
@@ -233,7 +232,6 @@ export type Database = {
           session_started_at?: string | null
           session_status?: string | null
           show_advanced_explanations?: boolean | null
-          trading_halted_for_day?: boolean | null
           updated_at?: string | null
           use_ai_reasoning?: boolean | null
           user_id: string
@@ -250,7 +248,6 @@ export type Database = {
           session_started_at?: string | null
           session_status?: string | null
           show_advanced_explanations?: boolean | null
-          trading_halted_for_day?: boolean | null
           updated_at?: string | null
           use_ai_reasoning?: boolean | null
           user_id?: string
