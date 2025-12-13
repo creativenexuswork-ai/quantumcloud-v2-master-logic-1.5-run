@@ -5,6 +5,7 @@ import { toast } from './use-toast';
 import { useSessionStore, TradingMode, getButtonStates } from '@/lib/state/sessionMachine';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTradingState } from './useSessionState';
+import { resetEngineMemory } from '@/lib/trading/engine';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const TICK_INTERVAL_MS = 1000; // 1 second between ticks (fast engine loop)
@@ -550,7 +551,10 @@ export function useSessionActions() {
     // STEP 2: End the run IMMEDIATELY (prevents re-entry)
     dispatch({ type: 'END_RUN', reason: 'close_all' });
     
-    // STEP 3: Stop ALL intervals
+    // STEP 3: Reset engine memory (fresh thermostat/warmStart for next session)
+    resetEngineMemory('close_all');
+    
+    // STEP 4: Stop ALL intervals
     clearTickInterval();
     clearPnlRefresh();
     clearAutoTpCheck();
@@ -703,6 +707,9 @@ export function useSessionActions() {
         toast({ title: 'Error', description: data?.error || 'Reset failed', variant: 'destructive' });
         return;
       }
+      
+      // Reset engine memory (fresh thermostat/warmStart/streak for new session)
+      resetEngineMemory('user_restart');
       
       // Reset local state
       dispatch({ type: 'RESET' });
