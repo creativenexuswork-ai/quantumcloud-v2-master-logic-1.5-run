@@ -14,7 +14,7 @@ const regimeColors: Record<string, string> = {
 };
 
 export function LiveStateCard() {
-  const { startSession, stopSession, halted, tickInFlight } = useTradingSession();
+  const { startSession, stopSession, tickInFlight } = useTradingSession();
   const { status } = useSession();
   const isRunning = status === 'running';
   const { data: paperData } = usePaperStats();
@@ -29,9 +29,6 @@ export function LiveStateCard() {
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg font-semibold">Live State & Mode</CardTitle>
-          {halted && (
-            <Badge variant="destructive">Trading Halted</Badge>
-          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -72,11 +69,9 @@ export function LiveStateCard() {
           <div className="flex justify-between items-center">
             <span className="text-sm text-muted-foreground">Status</span>
             <span className={`text-sm font-medium ${
-              isRunning ? 'text-success animate-pulse' :
-              halted ? 'text-destructive' :
-              'text-muted-foreground'
+              isRunning ? 'text-success animate-pulse' : 'text-muted-foreground'
             }`}>
-              {halted ? 'HALTED' : isRunning ? 'RUNNING' : 'IDLE'}
+              {isRunning ? 'RUNNING' : 'IDLE'}
             </span>
           </div>
         </div>
@@ -90,7 +85,7 @@ export function LiveStateCard() {
         <div className="flex gap-2 pt-2">
           <Button 
             onClick={startSession}
-            disabled={isRunning || halted || enabledModes.length === 0}
+            disabled={isRunning || enabledModes.length === 0}
             className="flex-1 gap-2"
           >
             {tickInFlight ? (

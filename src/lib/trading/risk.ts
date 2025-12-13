@@ -10,16 +10,6 @@ import type {
 } from './types';
 
 /**
- * Check if trading should be halted for the day
- */
-export function shouldHaltForDay(
-  stats: PaperSessionStats, 
-  riskConfig: RiskConfig
-): boolean {
-  return stats.todayPnlPercent <= -riskConfig.maxDailyLossPercent;
-}
-
-/**
  * Calculate current risk exposure from open positions
  */
 export function calculateCurrentRisk(
@@ -51,18 +41,7 @@ export function applyRiskGuardrails(
   const logs: SystemLog[] = [];
   const now = new Date().toISOString();
   
-  // Check 1: Daily loss limit
-  if (shouldHaltForDay(stats, riskConfig)) {
-    logs.push({
-      level: 'warning',
-      source: 'risk',
-      message: `Trading halted: Daily loss limit of ${riskConfig.maxDailyLossPercent}% reached`,
-      createdAt: now
-    });
-    return { orders: [], logs };
-  }
-  
-  // Check 2: Max concurrent risk
+  // Check max concurrent risk
   const currentRisk = calculateCurrentRisk(positions, equity);
   const remainingRiskCapacity = riskConfig.maxConcurrentRiskPercent - currentRisk;
   
@@ -76,7 +55,7 @@ export function applyRiskGuardrails(
     return { orders: [], logs };
   }
   
-  // Check 3: Max open trades
+  // Check max open trades
   const maxTrades = riskConfig.maxOpenTrades ?? 20;
   const availableSlots = maxTrades - positions.length;
   

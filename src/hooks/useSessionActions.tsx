@@ -137,11 +137,6 @@ export function useSessionActions() {
       
       const data = await response.json();
       
-      // Sync halted state
-      if (data.halted !== undefined) {
-        dispatch({ type: 'SET_HALTED', halted: data.halted });
-      }
-      
       // Sync session status from backend
       if (data.sessionStatus) {
         dispatch({ type: 'SYNC_STATUS', status: data.sessionStatus });
@@ -197,21 +192,9 @@ export function useSessionActions() {
         return;
       }
       
-      const result = await runTick();
-      if (result?.halted) {
-        toast({
-          title: 'Trading Halted',
-          description: 'Daily loss limit reached.',
-          variant: 'destructive',
-        });
-        clearTickInterval();
-        clearPnlRefresh();
-        clearAutoTpCheck();
-        dispatch({ type: 'SET_HALTED', halted: true });
-        dispatch({ type: 'END_RUN', reason: 'manual_stop' });
-      }
+      await runTick();
     }, TICK_INTERVAL_MS);
-  }, [runTick, clearTickInterval, clearPnlRefresh, clearAutoTpCheck, dispatch]);
+  }, [runTick, clearTickInterval]);
 
   // Start fast P&L refresh - runs independently from trading ticks
   const startPnlRefresh = useCallback(() => {
@@ -347,11 +330,6 @@ export function useSessionActions() {
   const activate = useCallback(async () => {
     const state = useSessionStore.getState();
     
-    if (state.halted) {
-      toast({ title: 'Trading Halted', description: 'Daily loss limit reached', variant: 'destructive' });
-      return;
-    }
-    
     // Can activate from idle, stopped, or holding
     if (state.status !== 'idle' && state.status !== 'stopped' && state.status !== 'holding') {
       return;
@@ -394,7 +372,7 @@ export function useSessionActions() {
           : `SESSION: Started - ${state.mode.toUpperCase()} mode active`,
       });
       
-      // ============== START NEW RUN ==============
+      // ============== START NEW RUN ==============\\
       // Get current equity for Auto-TP baseline
       const { data: stats } = await supabase.functions.invoke('paper-stats');
       const currentEquity = stats?.stats?.equity || 10000;
@@ -425,23 +403,7 @@ export function useSessionActions() {
       console.log(`[RUN] Started: id=${runId}, baseline=${currentEquity.toFixed(2)}, target=${targetEquity?.toFixed(2) || 'none'}, mode=${autoTpMode}`);
 
       // Run immediate tick
-      const result = await runTick();
-      
-      if (result?.halted) {
-        toast({
-          title: 'Trading Halted',
-          description: 'Daily loss limit reached.',
-          variant: 'destructive',
-        });
-        await supabase.from('paper_config').update({
-          is_running: false,
-          session_status: 'idle',
-        } as any).eq('user_id', user.id);
-        dispatch({ type: 'SET_HALTED', halted: true });
-        dispatch({ type: 'END_RUN', reason: 'manual_stop' });
-        dispatch({ type: 'SET_PENDING_ACTION', pendingAction: null });
-        return;
-      }
+      await runTick();
       
       startTickInterval();
       startPnlRefresh();
@@ -719,7 +681,7 @@ export function useSessionActions() {
     });
   }, [dispatch]);
 
-  // Reset session (clear halted state, reset to idle)
+  // Reset session (clear state, reset to idle)
   const resetSession = useCallback(async () => {
     clearTickInterval();
     clearPnlRefresh();
@@ -732,7 +694,6 @@ export function useSessionActions() {
       await supabase.from('paper_config').update({
         is_running: false,
         session_status: 'idle',
-        trading_halted_for_day: false,
         burst_requested: false,
       } as any).eq('user_id', user.id);
     }
