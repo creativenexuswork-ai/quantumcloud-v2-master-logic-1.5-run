@@ -33,6 +33,23 @@ const DEFAULT_MARKET_CONFIG = {
   typeFilters: { crypto: true, forex: false, index: false, metal: false },
 };
 
+// ============== Symbol Normalizer (BTCUSDT → BTCUSD) ==============
+
+function normalizeSymbol(s: string): string {
+  const x = (s || '').toUpperCase().trim();
+  if (x === 'BTCUSDT') return 'BTCUSD';
+  if (x === 'ETHUSDT') return 'ETHUSD';
+  // generic: strip trailing 'T' if stored as USDT variants
+  if (x.endsWith('USDT')) return x.replace('USDT', 'USD');
+  return x;
+}
+
+function normalizeSymbolList(list: string[]): string[] {
+  const out = (list || []).map(normalizeSymbol).filter(Boolean);
+  // de-dupe while preserving order
+  return Array.from(new Set(out));
+}
+
 // ============== Types ==============
 
 type Side = 'long' | 'short';
@@ -1099,20 +1116,46 @@ serve(async (req) => {
     console.log(`[ENGINE] status=${freshSessionStatus}, running=${freshIsRunning}, shouldRunModes=${shouldRunModes}, positions=${(finalPositions || []).length}`);
     
     if (shouldRunModes) {
-      // Ensure we always have symbols to trade
-      let symbolsToTrade = marketConfig.selectedSymbols || [];
-      if (!symbolsToTrade || symbolsToTrade.length === 0) {
+      // ================================================================
+      // NORMALIZE + VALIDATE SYMBOLS (BTCUSDT → BTCUSD, etc.)
+      // ================================================================
+      let symbolsToTrade = normalizeSymbolList(marketConfig.selectedSymbols || []);
+      if (symbolsToTrade.length === 0) {
         symbolsToTrade = DEFAULT_MARKET_CONFIG.selectedSymbols;
       }
-      
-      // ================================================================
-      // VALIDATE SYMBOLS AGAINST RETURNED TICKS
-      // ================================================================
-      const validSymbols = symbolsToTrade.filter((s: string) => {
-        const v = ticks?.[s];
-        return v !== undefined && v !== null && typeof v === 'object' && v.mid > 0;
+
+      // Normalize tick keys for matching
+      const tickKeys = Object.keys(ticks || {}).map(normalizeSymbol);
+      const tickKeySet = new Set(tickKeys);
+
+      // Find valid symbols from config
+      let validSymbols = symbolsToTrade.filter((s: string) => {
+        const norm = normalizeSymbol(s);
+        // Check both original key and normalized key in ticks
+        const tick = ticks?.[s] || ticks?.[norm];
+        return tick !== undefined && tick !== null && typeof tick === 'object' && tick.mid > 0;
       });
-      
+
+      // Auto-fallback if config symbols don't match ticks
+      if (validSymbols.length === 0) {
+        const fallback = DEFAULT_MARKET_CONFIG.selectedSymbols.filter(s => tickKeySet.has(s));
+        if (fallback.length > 0) {
+          console.log(`[ENGINE] SYMBOL_FALLBACK - using defaults: ${fallback.join(', ')}`);
+          validSymbols = fallback;
+        }
+      }
+
+      // Self-heal DB if legacy symbols detected (one-time per account)
+      const hadLegacy = (marketConfig.selectedSymbols || []).some((s: string) => /USDT$/i.test(s));
+      if (hadLegacy) {
+        const repaired = normalizeSymbolList(marketConfig.selectedSymbols || []);
+        await supabase
+          .from('paper_config')
+          .update({ market_config: { ...marketConfig, selectedSymbols: repaired } })
+          .eq('user_id', userId);
+        console.log(JSON.stringify({ tag: 'SYMBOL_REPAIR', user_id: userId, from: marketConfig.selectedSymbols, to: repaired }));
+      }
+
       if (validSymbols.length === 0) {
         console.warn(`[ENGINE] NO_VALID_SYMBOLS - requested: ${symbolsToTrade.join(', ')}`);
         console.warn(`[ENGINE] Available ticks: ${Object.keys(ticks || {}).join(', ')}`);
@@ -1123,8 +1166,8 @@ serve(async (req) => {
           available: Object.keys(ticks || {}),
         }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-      
-      // Use validSymbols instead of symbolsWithData
+
+      // Use validSymbols for trading
       const symbolsWithData = validSymbols;
       
       // Determine selected mode
