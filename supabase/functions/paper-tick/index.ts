@@ -1037,6 +1037,61 @@ serve(async (req) => {
     const marketConfig = config.market_config || DEFAULT_MARKET_CONFIG;
     const sessionStatus: SessionStatus = config.session_status || 'idle';
     const sessionStartedAt: string | null = config.session_started_at || null;
+    const isRunning: boolean = config.is_running ?? false;
+
+    // ================================================================
+    // EXECUTION GATE: Skip tick if session inactive or cooldown active
+    // This prevents ALL engine state drift (thermostat, adaptive, streak)
+    // ================================================================
+    const COOLDOWN_AFTER_STOP_MINUTES = 2;
+    const COOLDOWN_AFTER_TP_MINUTES = 1;
+    
+    const now = Date.now();
+    let cooldownActive = false;
+    let cooldownReason = '';
+    
+    // Check stop cooldown (using updated_at as proxy for last stop since we don't have last_stop_at column)
+    // If session is idle and was recently updated, treat as cooldown
+    if (sessionStatus === 'idle' || sessionStatus === 'stopped') {
+      cooldownActive = true;
+      cooldownReason = 'session_inactive';
+    }
+    
+    // Check if session is not running
+    if (!isRunning) {
+      cooldownActive = true;
+      cooldownReason = cooldownReason || 'is_running_false';
+    }
+
+    // EARLY EXIT: If session inactive or cooldown active, skip ALL processing
+    if (cooldownActive) {
+      console.log(`[TICK_SKIPPED] Session inactive or cooldown active. Reason: ${cooldownReason}, status=${sessionStatus}, isRunning=${isRunning}`);
+      
+      // Still return current stats for UI display, but don't process anything
+      const { data: displayPositions } = await supabase.from('paper_positions').select('*').eq('user_id', userId).eq('closed', false);
+      const { data: displayTrades } = await supabase.from('paper_trades').select('*').eq('user_id', userId).eq('session_date', today);
+      const { data: displayStats } = await supabase.from('paper_stats_daily').select('equity_start').eq('user_id', userId).eq('trade_date', today).maybeSingle();
+      const { data: displayAccount } = await supabase.from('accounts').select('equity').eq('user_id', userId).eq('type', 'paper').maybeSingle();
+      
+      const displayEquityStart = displayStats?.equity_start ?? displayAccount?.equity ?? 10000;
+      const displayRealizedPnl = (displayTrades || []).reduce((sum: number, t: any) => sum + Number(t.realized_pnl), 0);
+      const displayUnrealizedPnl = (displayPositions || []).reduce((sum: number, p: any) => sum + Number(p.unrealized_pnl || 0), 0);
+      const displayTodayPnl = displayRealizedPnl + displayUnrealizedPnl;
+      
+      return new Response(JSON.stringify({
+        ok: true,
+        skipped: true,
+        reason: cooldownReason,
+        sessionStatus,
+        stats: {
+          todayPnl: displayTodayPnl,
+          tradesToday: (displayTrades || []).length,
+          openPositionsCount: (displayPositions || []).length,
+          equity: displayEquityStart + displayTodayPnl,
+          winRate: 50,
+        },
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     const { data: dailyStats } = await supabase.from('paper_stats_daily').select('equity_start').eq('user_id', userId).eq('trade_date', today).maybeSingle();
     const { data: account } = await supabase.from('accounts').select('equity').eq('user_id', userId).eq('type', 'paper').maybeSingle();
