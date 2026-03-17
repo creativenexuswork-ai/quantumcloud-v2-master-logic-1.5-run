@@ -172,7 +172,7 @@ export function useTradingSession() {
   const isHolding = status === 'holding';
   const [tickInFlight, setTickInFlight] = useState(false);
   
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusRef = useRef<SessionStatus>('idle');
   const tickInFlightRef = useRef(false);
   const queryClient = useQueryClient();

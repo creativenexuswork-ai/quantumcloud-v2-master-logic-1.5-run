@@ -124,6 +124,34 @@ serve(async (req) => {
   }
 
   try {
+    // ============= AUTH GATE =============
+    const authHeader = req.headers.get('Authorization')?.replace('Bearer ', '');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Accept service role key (server-to-server from paper-tick) OR valid user JWT
+    const isServiceRole = authHeader === serviceRoleKey;
+    if (!isServiceRole) {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+      const authClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: `Bearer ${authHeader}` } },
+      });
+      const { data, error: authError } = await authClient.auth.getUser(authHeader);
+      if (authError || !data?.user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     const apiKey = Deno.env.get('FINNHUB_API_KEY');
     if (!apiKey) {
       console.error('[PRICE_FEED] FINNHUB_API_KEY not configured');
@@ -137,8 +165,7 @@ serve(async (req) => {
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     // Parse request body for symbols
     let requestedSymbols: string[] = [];

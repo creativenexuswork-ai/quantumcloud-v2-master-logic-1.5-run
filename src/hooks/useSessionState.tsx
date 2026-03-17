@@ -156,7 +156,7 @@ export const useTradingState = create<TradingState>((set, get) => ({
 
 // Debounce helper
 function debounce<T extends (...args: any[]) => any>(fn: T, ms: number) {
-  let timeout: NodeJS.Timeout | null = null;
+  let timeout: ReturnType<typeof setTimeout> | null = null;
   return (...args: Parameters<T>) => {
     if (timeout) clearTimeout(timeout);
     timeout = setTimeout(() => fn(...args), ms);

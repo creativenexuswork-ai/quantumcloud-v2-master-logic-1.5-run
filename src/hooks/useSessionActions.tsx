@@ -21,10 +21,10 @@ const MODE_TO_BACKEND: Record<TradingMode, string> = {
 export function useSessionActions() {
   const { session: authSession } = useAuth();
   const queryClient = useQueryClient();
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const pnlRefreshRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pnlRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tickInFlightRef = useRef(false);
-  const autoTpCheckRef = useRef<NodeJS.Timeout | null>(null);
+  const autoTpCheckRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Get state and dispatch from store
   const sessionState = useSessionStore();
