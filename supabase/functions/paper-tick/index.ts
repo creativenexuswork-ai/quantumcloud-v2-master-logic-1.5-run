@@ -873,10 +873,10 @@ serve(async (req) => {
     // ================================================================
     if (ticks === undefined || ticks === null || typeof ticks !== 'object' || Object.keys(ticks).length === 0) {
       console.warn('[PAPER_TICK] NO_TICK_DATA - ticks invalid or empty');
+      console.warn('[PAPER_TICK] NO_TICK_DATA details:', JSON.stringify(priceFeedRaw));
       return new Response(JSON.stringify({
         ok: false,
         error: 'NO_TICK_DATA',
-        details: priceFeedRaw ?? null,
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
     
@@ -1408,13 +1408,9 @@ serve(async (req) => {
     // UNCAUGHT EXCEPTION HANDLER - Never return 500
     // ================================================================
     console.error('[PAPER_TICK] UNCAUGHT_EXCEPTION:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const errorStack = error instanceof Error ? error.stack : null;
     return new Response(JSON.stringify({ 
       ok: false,
-      error: 'UNCAUGHT_EXCEPTION',
-      message: errorMessage,
-      stack: errorStack,
+      error: 'Internal server error',
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
