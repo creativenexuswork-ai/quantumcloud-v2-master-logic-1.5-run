@@ -63,11 +63,9 @@ function AppRoutes() {
       <Route
         path="/"
         element={
-          <ProtectedRoute>
-            <TradingProvider>
-              <Dashboard />
-            </TradingProvider>
-          </ProtectedRoute>
+          <TradingProvider>
+            <Dashboard />
+          </TradingProvider>
         }
       />
       <Route
