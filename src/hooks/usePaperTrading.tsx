@@ -11,7 +11,11 @@ const TICK_INTERVAL_MS = 2000;
 const STATS_REFRESH_MS = 600; // P&L refresh every 600ms for faster updates
 
 export interface PaperStats {
-  equity: number;
+  equity: number | null;
+  balance?: number | null;
+  equityStatus?: string;
+  equityReason?: string | null;
+  snapshotDrift?: number | null;
   todayPnl: number;
   todayPnlPercent: number;
   winRate: number;

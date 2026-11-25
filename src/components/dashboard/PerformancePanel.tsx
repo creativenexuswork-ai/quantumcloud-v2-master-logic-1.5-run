@@ -3,7 +3,7 @@ import { useFullSessionState } from '@/hooks/useSessionState';
 import { cn } from '@/lib/utils';
 
 export function PerformancePanel() {
-  const { equity, todayPnl, todayPnlPercent, tradesToday, winRate } = useFullSessionState();
+  const { equity, equityStatus, equityReason, todayPnl, todayPnlPercent, tradesToday, winRate } = useFullSessionState();
 
   const avgRR = 1.5; // Placeholder - would come from stats
 
@@ -145,9 +145,16 @@ export function PerformancePanel() {
       <div className="mt-3 p-2.5 rounded-lg bg-muted/20 flex items-center justify-between">
         <span className="text-xs text-muted-foreground">Equity</span>
         <span className="font-mono text-sm font-semibold text-foreground">
-          ${equity.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          {equityStatus === 'OK'
+            ? `$${equity.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+            : 'Unavailable'}
         </span>
       </div>
+      {equityStatus !== 'OK' && (
+        <p className="mt-1.5 text-[11px] text-destructive" role="status">
+          Equity unavailable ({equityReason ?? 'unknown'}). New paper entries are blocked.
+        </p>
+      )}
     </div>
   );
 }

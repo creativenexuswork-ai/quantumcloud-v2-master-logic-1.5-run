@@ -1,6 +1,33 @@
 // ============= PAPER TICK v1.5 — Master Logic Integration =============
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  normalizeModeKey, normalizeEnabledModes, normalizeRiskConfig, resolveAccountEquity,
+  decideDirection, evaluateExit, governor, positionRisk, netClosePnl, sizeFromRisk,
+  type EquityResult, type RiskConfig,
+} from "../_shared/paper-core.ts";
+
+// Canonical equity loader: active paper account (must be exactly one) + all realized + open unrealized.
+// deno-lint-ignore no-explicit-any
+async function loadEquity(supabase: any, userId: string, unrealizedOverride?: number[]): Promise<EquityResult> {
+  const [{ data: accts, error: aErr }, { data: realized, error: tErr }, { data: open, error: pErr }] = await Promise.all([
+    supabase.from('accounts').select('id, equity, type, is_active').eq('user_id', userId).eq('type', 'paper').eq('is_active', true),
+    supabase.from('paper_trades').select('realized_pnl').eq('user_id', userId),
+    supabase.from('paper_positions').select('unrealized_pnl').eq('user_id', userId).eq('closed', false),
+  ]);
+  if (aErr || tErr || pErr) return { ok: false, code: 'EQUITY_UNAVAILABLE', reason: 'LOAD_FAILED' };
+  return resolveAccountEquity(
+    accts,
+    (realized || []).map((t: any) => Number(t.realized_pnl)),
+    unrealizedOverride ?? (open || []).map((p: any) => Number(p.unrealized_pnl || 0)),
+  );
+}
+
+function equityFields(eq: EquityResult) {
+  return eq.ok
+    ? { equity: eq.equity, balance: eq.balance, equityStatus: 'OK' }
+    : { equity: null, balance: null, equityStatus: eq.code, equityReason: eq.reason };
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -494,6 +521,8 @@ interface MasterLogicContext {
   equity: number;
   baseRiskPercent: number;
   maxOpenTrades: number;
+  allowEntries: boolean;
+  governorSizeMultiplier: number;
   openPositions: Position[];
   recentTrades: any[];
   todayPnlPercent: number;
@@ -512,12 +541,14 @@ interface ScoredCandidate {
 function runMasterLogicV15(ctx: MasterLogicContext): {
   proposedOrders: ProposedOrder[];
   positionsToClose: Array<{ id: string; reason: string }>;
+  slUpdates?: Array<{ id: string; sl: number }>;
   effectiveMode: TradingModeKey;
   adaptiveSubMode?: 'burst' | 'scalper' | 'trend';
   thermostat: ThermostatState;
-  diagnostics: { symbolsEvaluated: number; candidatesFound: number; passedFilters: number };
+  diagnostics: { symbolsEvaluated: number; candidatesFound: number; passedFilters: number; noEvidence?: number };
 } {
-  const diagnostics = { symbolsEvaluated: 0, candidatesFound: 0, passedFilters: 0 };
+  const diagnostics = { symbolsEvaluated: 0, candidatesFound: 0, passedFilters: 0, noEvidence: 0 };
+  const slUpdates: Array<{ id: string; sl: number }> = [];
   const session = getSessionInfo();
   
   // Guard: ensure ticks object exists
@@ -593,43 +624,16 @@ function runMasterLogicV15(ctx: MasterLogicContext): {
       ? ((pos.side === 'long' ? currentPrice - entryPrice : entryPrice - currentPrice) / entryPrice) * 100
       : 0;
     
-    // Mode-specific profile for the position
-    const posProfile = MODE_PROFILES[pos.mode as TradingModeKey] || activeProfile;
+    // Profile of the mode that opened the position (legacy 'sniper' -> scalper)
+    const posProfile = MODE_PROFILES[(normalizeModeKey(pos.mode) || 'scalper') as TradingModeKey] || activeProfile;
     
-    // Check per-position SL
-    if (pnlPercent <= -posProfile.defaultStopPercent) {
-      positionsToClose.push({ id: pos.id, reason: 'position_sl' });
+    // Position-owned SL/TP + reachable trailing stop (ratchets stored SL)
+    const exit = evaluateExit(pos as any, currentPrice, posProfile, Date.now());
+    if (exit.action === 'close') {
+      positionsToClose.push({ id: pos.id, reason: exit.reason });
       continue;
     }
-    
-    // Check per-position TP
-    const tpPercent = posProfile.defaultStopPercent * posProfile.defaultTPMultiplier;
-    if (pnlPercent >= tpPercent) {
-      positionsToClose.push({ id: pos.id, reason: 'position_tp' });
-      continue;
-    }
-    
-    // Cut losers early
-    if (pnlPercent <= posProfile.cutLoserThreshold) {
-      positionsToClose.push({ id: pos.id, reason: 'cut_loser' });
-      continue;
-    }
-    
-    // Trailing stop
-    if (pnlPercent >= posProfile.trailingStopActivation) {
-      const trailLevel = posProfile.trailingStopActivation - posProfile.trailingStopDistance;
-      if (pnlPercent < trailLevel) {
-        positionsToClose.push({ id: pos.id, reason: 'trailing_stop' });
-        continue;
-      }
-    }
-    
-    // Age limit
-    const ageMinutes = (Date.now() - new Date(pos.opened_at).getTime()) / (1000 * 60);
-    if (ageMinutes > posProfile.maxHoldMinutes) {
-      positionsToClose.push({ id: pos.id, reason: 'age_limit' });
-      continue;
-    }
+    if (exit.action === 'move_sl') slUpdates.push({ id: pos.id, sl: exit.sl });
     
     // Regime flip check
     const regime = regimes[pos.symbol];
@@ -645,8 +649,8 @@ function runMasterLogicV15(ctx: MasterLogicContext): {
   const currentOpenCount = ctx.openPositions.length - positionsToClose.length;
   const availableSlots = Math.max(0, Math.min(activeProfile.maxConcurrentTradesTotal, ctx.maxOpenTrades) - currentOpenCount);
   
-  if (availableSlots === 0) {
-    return { proposedOrders: [], positionsToClose, effectiveMode, adaptiveSubMode, thermostat, diagnostics };
+  if (availableSlots === 0 || !ctx.allowEntries) {
+    return { proposedOrders: [], positionsToClose, slUpdates, effectiveMode, adaptiveSubMode, thermostat, diagnostics };
   }
   
   // 6. Score all symbols (only those with valid ticks)
@@ -704,15 +708,10 @@ function runMasterLogicV15(ctx: MasterLogicContext): {
     if (existingCount > 0) score -= existingCount * 10;
     
     // Determine direction
-    let direction: Side;
-    if (regime.trendBias === 'bull' && regime.confidence > 0.35) {
-      direction = 'long';
-    } else if (regime.trendBias === 'bear' && regime.confidence > 0.35) {
-      direction = 'short';
-    } else {
-      // Fallback - always have a direction to ensure trades fire
-      direction = Math.random() > 0.5 ? 'long' : 'short';
-    }
+    // No entry on insufficient evidence (no random fallback)
+    const decided = decideDirection(regime.trendBias, regime.confidence);
+    if (!decided) { diagnostics.noEvidence++; continue; }
+    const direction: Side = decided;
     
     // Calculate confidence
     let confidence = 0.5 + (score - 50) / 100;
@@ -764,12 +763,13 @@ function runMasterLogicV15(ctx: MasterLogicContext): {
     else if (thermostat.aggressionLevel > 0.7) sizeMultiplier *= 1.2;
     sizeMultiplier = Math.max(0.2, Math.min(1.5, sizeMultiplier));
     
-    const riskPercent = ctx.baseRiskPercent * sizeMultiplier;
+    const riskPercent = ctx.baseRiskPercent * sizeMultiplier * ctx.governorSizeMultiplier;
     const slPercent = activeProfile.defaultStopPercent / 100;
     const slDistance = tick.mid * slPercent;
     
-    const riskAmount = ctx.equity * (riskPercent / 100);
-    const size = slDistance > 0 ? Math.max(0.001, riskAmount / slDistance) : 0.001;
+    const slPrice = direction === 'long' ? tick.mid - slDistance : tick.mid + slDistance;
+    const size = sizeFromRisk(ctx.equity, riskPercent, tick.mid, slPrice);
+    if (!(size > 0)) continue;
     
     const tpPercent = activeProfile.defaultStopPercent * activeProfile.defaultTPMultiplier / 100;
     const tpDistance = tick.mid * tpPercent;
@@ -800,6 +800,7 @@ function runMasterLogicV15(ctx: MasterLogicContext): {
   return {
     proposedOrders,
     positionsToClose,
+    slUpdates,
     effectiveMode,
     adaptiveSubMode,
     thermostat,
@@ -839,6 +840,9 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { burstRequested, globalClose, takeBurstProfit, takeProfit } = body;
     const today = new Date().toISOString().split('T')[0];
+    // Fees from the normalized risk contract (default 0 bps)
+    const { data: feeCfg } = await supabase.from('paper_config').select('risk_config').eq('user_id', userId).maybeSingle();
+    const feeBps = normalizeRiskConfig(feeCfg?.risk_config).feeBps;
 
     // ================================================================
     // MANUAL ACTION GUARD
@@ -896,9 +900,6 @@ serve(async (req) => {
       const { data: existingTrades } = await supabase.from('paper_trades').select('*').eq('user_id', userId).eq('session_date', today);
       const existingRealizedPnl = (existingTrades || []).reduce((sum: number, t: any) => sum + Number(t.realized_pnl), 0);
       
-      const { data: dailyStats } = await supabase.from('paper_stats_daily').select('equity_start').eq('user_id', userId).eq('trade_date', today).maybeSingle();
-      const { data: account } = await supabase.from('accounts').select('equity').eq('user_id', userId).eq('type', 'paper').maybeSingle();
-      const startingEquity = dailyStats?.equity_start ?? account?.equity ?? 10000;
       
       const { data: config } = await supabase.from('paper_config').select('session_status').eq('user_id', userId).maybeSingle();
       const currentSessionStatus = config?.session_status || 'running';
@@ -907,8 +908,7 @@ serve(async (req) => {
         const tradeRecords = (allPositions || []).map(pos => {
           const tick = ticks[pos.symbol];
           const exitPrice = tick ? (pos.side === 'long' ? tick.bid : tick.ask) : Number(pos.entry_price);
-          const priceDiff = pos.side === 'long' ? exitPrice - Number(pos.entry_price) : Number(pos.entry_price) - exitPrice;
-          const pnl = priceDiff * Number(pos.size);
+          const pnl = netClosePnl(pos.side, Number(pos.entry_price), exitPrice, Number(pos.size), feeBps).net;
           closePnl += pnl;
           return {
             user_id: userId, symbol: pos.symbol, mode: pos.mode, side: pos.side,
@@ -939,7 +939,7 @@ serve(async (req) => {
           todayPnl: totalRealizedPnl,
           tradesToday: finalTradesToday,
           openPositionsCount: 0,
-          equity: startingEquity + totalRealizedPnl,
+          ...equityFields(await loadEquity(supabase, userId, [])),
           winRate: finalTradesToday > 0 ? (wins / finalTradesToday) * 100 : 50,
         }
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -958,16 +958,12 @@ serve(async (req) => {
       const { data: existingTrades } = await supabase.from('paper_trades').select('*').eq('user_id', userId).eq('session_date', today);
       const existingRealizedPnl = (existingTrades || []).reduce((sum: number, t: any) => sum + Number(t.realized_pnl), 0);
       
-      const { data: dailyStats } = await supabase.from('paper_stats_daily').select('equity_start').eq('user_id', userId).eq('trade_date', today).maybeSingle();
-      const { data: account } = await supabase.from('accounts').select('equity').eq('user_id', userId).eq('type', 'paper').maybeSingle();
-      const startingEquity = dailyStats?.equity_start ?? account?.equity ?? 10000;
       
       if (closedCount > 0) {
         const tradeRecords = (allPositions || []).map(pos => {
           const tick = ticks[pos.symbol];
           const exitPrice = tick ? (pos.side === 'long' ? tick.bid : tick.ask) : Number(pos.entry_price);
-          const priceDiff = pos.side === 'long' ? exitPrice - Number(pos.entry_price) : Number(pos.entry_price) - exitPrice;
-          const pnl = priceDiff * Number(pos.size);
+          const pnl = netClosePnl(pos.side, Number(pos.entry_price), exitPrice, Number(pos.size), feeBps).net;
           closePnl += pnl;
           return {
             user_id: userId, symbol: pos.symbol, mode: pos.mode, side: pos.side,
@@ -1006,7 +1002,7 @@ serve(async (req) => {
           todayPnl: totalRealizedPnl,
           tradesToday: finalTradesToday,
           openPositionsCount: 0,
-          equity: startingEquity + totalRealizedPnl,
+          ...equityFields(await loadEquity(supabase, userId, [])),
           winRate: 50,
         }
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -1070,10 +1066,7 @@ serve(async (req) => {
       // Still return current stats for UI display, but don't process anything
       const { data: displayPositions } = await supabase.from('paper_positions').select('*').eq('user_id', userId).eq('closed', false);
       const { data: displayTrades } = await supabase.from('paper_trades').select('*').eq('user_id', userId).eq('session_date', today);
-      const { data: displayStats } = await supabase.from('paper_stats_daily').select('equity_start').eq('user_id', userId).eq('trade_date', today).maybeSingle();
-      const { data: displayAccount } = await supabase.from('accounts').select('equity').eq('user_id', userId).eq('type', 'paper').maybeSingle();
-      
-      const displayEquityStart = displayStats?.equity_start ?? displayAccount?.equity ?? 10000;
+      const displayEquity = await loadEquity(supabase, userId);
       const displayRealizedPnl = (displayTrades || []).reduce((sum: number, t: any) => sum + Number(t.realized_pnl), 0);
       const displayUnrealizedPnl = (displayPositions || []).reduce((sum: number, p: any) => sum + Number(p.unrealized_pnl || 0), 0);
       const displayTodayPnl = displayRealizedPnl + displayUnrealizedPnl;
@@ -1087,15 +1080,16 @@ serve(async (req) => {
           todayPnl: displayTodayPnl,
           tradesToday: (displayTrades || []).length,
           openPositionsCount: (displayPositions || []).length,
-          equity: displayEquityStart + displayTodayPnl,
+          ...equityFields(displayEquity),
           winRate: 50,
         },
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const { data: dailyStats } = await supabase.from('paper_stats_daily').select('equity_start').eq('user_id', userId).eq('trade_date', today).maybeSingle();
-    const { data: account } = await supabase.from('accounts').select('equity').eq('user_id', userId).eq('type', 'paper').maybeSingle();
-    const startingEquity = dailyStats?.equity_start ?? account?.equity ?? 10000;
+    const risk: RiskConfig = normalizeRiskConfig(riskConfig);
+    const equityAtStart = await loadEquity(supabase, userId);
+    // Percent bases: day-start equity = balance minus today's realized (derived, never hardcoded)
+    let startingEquity = 0;
 
     const { data: positions } = await supabase.from('paper_positions').select('*').eq('user_id', userId).eq('closed', false);
     
@@ -1127,6 +1121,7 @@ serve(async (req) => {
 
     const realizedPnl = (todayTrades || []).reduce((sum: number, t: any) => sum + Number(t.realized_pnl), 0);
     const unrealizedPnl = (positions || []).reduce((sum: number, p: any) => sum + Number(p.unrealized_pnl || 0), 0);
+    if (equityAtStart.ok) startingEquity = equityAtStart.balance - realizedPnl;
     const currentPnl = realizedPnl + unrealizedPnl;
     const currentPnlPercent = startingEquity > 0 ? (currentPnl / startingEquity) * 100 : 0;
     const closedCount = (todayTrades || []).length;
@@ -1145,8 +1140,7 @@ serve(async (req) => {
         const tradeRecords = (burstPositions || []).map(pos => {
           const tick = ticks[pos.symbol];
           const exitPrice = tick ? (pos.side === 'long' ? tick.bid : tick.ask) : Number(pos.entry_price);
-          const priceDiff = pos.side === 'long' ? exitPrice - Number(pos.entry_price) : Number(pos.entry_price) - exitPrice;
-          const pnl = priceDiff * Number(pos.size);
+          const pnl = netClosePnl(pos.side, Number(pos.entry_price), exitPrice, Number(pos.size), feeBps).net;
           return {
             user_id: userId, symbol: pos.symbol, mode: pos.mode, side: pos.side,
             size: pos.size, entry_price: pos.entry_price, exit_price: exitPrice,
@@ -1209,6 +1203,7 @@ serve(async (req) => {
     const freshIsRunning = freshConfig?.is_running ?? false;
     
     const shouldRunModes = freshSessionStatus === 'running' && freshIsRunning;
+    let engineDiagnostics: Record<string, unknown> | null = null;
     
     console.log(`[ENGINE] status=${freshSessionStatus}, running=${freshIsRunning}, shouldRunModes=${shouldRunModes}, positions=${(finalPositions || []).length}`);
     
@@ -1268,8 +1263,12 @@ serve(async (req) => {
       const symbolsWithData = validSymbols;
       
       // Determine selected mode
-      let enabledModes = modeConfig.enabledModes as TradingModeKey[] || ['scalper'];
-      if (!enabledModes || enabledModes.length === 0) {
+      const normModes = normalizeEnabledModes(modeConfig.enabledModes);
+      if (normModes.unknown.length > 0) {
+        console.warn(JSON.stringify({ tag: 'UNKNOWN_MODE', user_id: userId, ignored: normModes.unknown }));
+      }
+      let enabledModes = normModes.modes as TradingModeKey[];
+      if (enabledModes.length === 0) {
         enabledModes = ['burst', 'trend', 'scalper'];
       }
       
@@ -1297,13 +1296,32 @@ serve(async (req) => {
       
       // Run Master Logic v1.5 with SESSION-FILTERED TRADES for thermostat
       // This ensures restart = fresh thermostat state
+      const liveEquity = equityAtStart.ok ? equityAtStart.balance - realizedPnl + finalTodayPnl : 0;
+      const gov = governor({
+        equity: liveEquity,
+        dayStartEquity: startingEquity,
+        openRiskAmount: (finalPositions || []).reduce((s: number, p: any) => s + positionRisk(p), 0),
+        openCount: (finalPositions || []).length,
+        risk,
+      });
+      if (!equityAtStart.ok) gov.reasons.unshift(`EQUITY_UNAVAILABLE:${equityAtStart.reason}`);
+      const allowEntries = equityAtStart.ok && gov.allowEntries;
+      console.log(JSON.stringify({
+        tag: 'ENGINE_CONTRACT', user_id: userId, mode: selectedMode, equity: equityAtStart.ok ? liveEquity : null,
+        risk: { perTradeRiskPct: risk.perTradeRiskPct, maxDailyDrawdownPct: risk.maxDailyDrawdownPct, maxOpenTrades: risk.maxOpenTrades, maxConcurrentRiskPct: risk.maxConcurrentRiskPct, feeBps: risk.feeBps, sources: risk.sources },
+        governor: { allowEntries, sizeMultiplier: gov.sizeMultiplier, reasons: gov.reasons, dayDrawdownPct: gov.dayDrawdownPct, openRiskPct: gov.openRiskPct },
+      }));
+      engineDiagnostics = { mode: selectedMode, allowEntries, governorReasons: gov.reasons, sizeMultiplier: gov.sizeMultiplier, dayDrawdownPct: gov.dayDrawdownPct, openRiskPct: gov.openRiskPct, risk };
+
       const result = runMasterLogicV15({
         selectedMode,
         symbols: symbolsWithData,
         ticks,
-        equity: startingEquity + finalTodayPnl,
-        baseRiskPercent: riskConfig.riskPerTrade || 2,
-        maxOpenTrades: riskConfig.maxOpenTrades || 20,
+        equity: liveEquity,
+        baseRiskPercent: risk.perTradeRiskPct,
+        maxOpenTrades: risk.maxOpenTrades,
+        allowEntries,
+        governorSizeMultiplier: gov.sizeMultiplier,
         openPositions: (finalPositions || []) as Position[],
         recentTrades: sessionTrades, // SESSION-FILTERED, not all today's trades
         todayPnlPercent: finalTodayPnlPercent,
@@ -1312,6 +1330,12 @@ serve(async (req) => {
       console.log(`[MASTER_LOGIC] Diagnostics: evaluated=${result.diagnostics.symbolsEvaluated}, candidates=${result.diagnostics.candidatesFound}, passed=${result.diagnostics.passedFilters}`);
       console.log(`[MASTER_LOGIC] Thermostat: regime=${result.thermostat.regimeTag}, aggression=${result.thermostat.aggressionLevel.toFixed(2)}, winRate=${result.thermostat.recentWinRate.toFixed(0)}%`);
       
+      if (engineDiagnostics) engineDiagnostics.noEvidence = result.diagnostics.noEvidence ?? 0;
+      // Persist trailing-stop ratchets (stored SL only ever tightens)
+      for (const u of result.slUpdates || []) {
+        await supabase.from('paper_positions').update({ sl: u.sl }).eq('id', u.id).eq('user_id', userId);
+      }
+
       // Process position closures from Master Logic
       for (const closeOrder of result.positionsToClose) {
         const pos = (finalPositions || []).find((p: any) => p.id === closeOrder.id);
@@ -1319,8 +1343,7 @@ serve(async (req) => {
         
         const tick = ticks[pos.symbol];
         const exitPrice = tick ? (pos.side === 'long' ? tick.bid : tick.ask) : Number(pos.entry_price);
-        const priceDiff = pos.side === 'long' ? exitPrice - Number(pos.entry_price) : Number(pos.entry_price) - exitPrice;
-        const pnl = priceDiff * Number(pos.size);
+        const pnl = netClosePnl(pos.side, Number(pos.entry_price), exitPrice, Number(pos.size), feeBps).net;
         
         await supabase.from('paper_trades').insert({
           user_id: userId, symbol: pos.symbol, mode: pos.mode, side: pos.side,
@@ -1328,7 +1351,7 @@ serve(async (req) => {
           sl: pos.sl, tp: pos.tp, opened_at: pos.opened_at,
           realized_pnl: pnl, reason: closeOrder.reason, session_date: today, batch_id: pos.batch_id,
         });
-        await supabase.from('paper_positions').delete().eq('id', pos.id);
+        await supabase.from('paper_positions').delete().eq('id', pos.id).eq('user_id', userId);
         
         await supabase.from('system_logs').insert({
           user_id: userId,
@@ -1384,9 +1407,8 @@ serve(async (req) => {
 
     // Final stats
     const { data: veryFinalPositions } = await supabase.from('paper_positions').select('id').eq('user_id', userId).eq('closed', false);
-    const { data: veryFinalTrades } = await supabase.from('paper_trades').select('realized_pnl').eq('user_id', userId).eq('session_date', today);
     
-    const veryFinalRealizedPnl = (veryFinalTrades || []).reduce((sum: number, t: any) => sum + Number(t.realized_pnl), 0);
+    const veryFinalEquity = await loadEquity(supabase, userId);
 
     return new Response(JSON.stringify({ 
       success: true, 
@@ -1397,9 +1419,10 @@ serve(async (req) => {
         todayPnlPercent: finalTodayPnlPercent,
         tradesToday: finalClosedCount,
         openPositionsCount: (veryFinalPositions || []).length,
-        equity: startingEquity + veryFinalRealizedPnl,
+        ...equityFields(veryFinalEquity),
         winRate: finalWinRate,
-      }
+      },
+      diagnostics: engineDiagnostics,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -60,7 +60,7 @@ export function getInitialSessionState(): SessionState {
     pnlToday: 0,
     tradesToday: 0,
     winRate: 0,
-    equity: 10000,
+    equity: 0, // filled from backend; never a fake balance
     lastError: null,
     pendingAction: null,
     // Run lifecycle - all reset

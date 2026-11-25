@@ -35,7 +35,7 @@ export function useSessionSync() {
         pnlToday: stats.todayPnl || 0,
         tradesToday: stats.tradesToday || 0,
         winRate: stats.winRate || 0,
-        equity: stats.equity || 10000,
+        equity: stats.equity ?? 0,
       });
     }
 

@@ -29,11 +29,11 @@ export type TradingMode =
 // Map UI mode names to backend mode keys
 const UI_TO_BACKEND_MODE: Record<TradingMode, string> = {
   'burst': 'burst',
-  'scalper': 'sniper', // scalper uses sniper logic
+  'scalper': 'scalper',
   'trend': 'trend',
   'swing': 'swing',
   'memory': 'memory',
-  'sniper': 'sniper',
+  'sniper': 'scalper', // legacy alias
   'risk-off': 'news', // risk-off uses news mode (conservative)
   'ai-assist': 'hybrid',
 };
@@ -185,7 +185,9 @@ export function useFullSessionState() {
   const todayPnlPercent = paperData?.stats?.todayPnlPercent || 0;
   const tradesToday = paperData?.stats?.tradesToday || 0;
   const winRate = paperData?.stats?.winRate || 0;
-  const equity = paperData?.stats?.equity || 10000;
+  const equity = paperData?.stats?.equity ?? 0;
+  const equityStatus = paperData?.stats?.equityStatus ?? 'OK';
+  const equityReason = paperData?.stats?.equityReason ?? null;
   
   // Helper to set running state (backward compatible)
   const setRunning = (val: boolean) => setStatus(val ? 'running' : 'idle');
@@ -196,7 +198,8 @@ export function useFullSessionState() {
     
     // Map UI mode to backend mode and update enabled modes
     const backendMode = UI_TO_BACKEND_MODE[mode];
-    const enabledModes = [backendMode, 'trend', 'burst', 'news', 'memory']; // Include common modes
+    // Only modes the engine knows (burst/scalper/trend); de-duplicated
+    const enabledModes = Array.from(new Set([backendMode, 'trend', 'burst']));
     
     console.log(`[SESSION] selectedMode set to=${mode} (backend=${backendMode})`);
     
@@ -297,6 +300,8 @@ export function useFullSessionState() {
     
     // Performance metrics
     equity,
+    equityStatus,
+    equityReason,
     todayPnl,
     todayPnlPercent,
     tradesToday,

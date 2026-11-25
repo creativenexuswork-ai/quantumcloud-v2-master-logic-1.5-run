@@ -14,7 +14,7 @@ const PNL_REFRESH_MS = 300; // P&L refresh interval - fast UI updates
 // Map UI mode to backend mode
 const MODE_TO_BACKEND: Record<TradingMode, string> = {
   burst: 'burst',
-  scalper: 'sniper',
+  scalper: 'scalper',
   trend: 'trend',
 };
 
@@ -74,7 +74,7 @@ export function useSessionActions() {
           pnlToday: stats.stats.todayPnl || 0,
           tradesToday: stats.stats.tradesToday || 0,
           winRate: stats.stats.winRate || 0,
-          equity: stats.stats.equity || 10000,
+          equity: stats.stats.equity ?? 0,
         });
         dispatch({
           type: 'SYNC_POSITIONS',
@@ -155,7 +155,7 @@ export function useSessionActions() {
           pnlToday: data.stats.todayPnl || 0,
           tradesToday: data.stats.tradesToday || 0,
           winRate: data.stats.winRate || 0,
-          equity: data.stats.equity || 10000,
+          equity: data.stats.equity ?? 0,
         });
       }
       
@@ -238,7 +238,9 @@ export function useSessionActions() {
       const { data: stats } = await supabase.functions.invoke('paper-stats');
       if (!stats?.stats) return;
       
-      const currentEquity = stats.stats.equity || 10000;
+      // No fake equity: skip Auto-TP while equity is unavailable
+      if (typeof stats.stats.equity !== 'number') return;
+      const currentEquity: number = stats.stats.equity;
       const targetEquity = state.autoTpTargetEquity;
       
       // Small buffer to prevent flicker (0.1% of target)
@@ -376,7 +378,10 @@ export function useSessionActions() {
       // ============== START NEW RUN ==============\\
       // Get current equity for Auto-TP baseline
       const { data: stats } = await supabase.functions.invoke('paper-stats');
-      const currentEquity = stats?.stats?.equity || 10000;
+      const rawEquity = stats?.stats?.equity;
+      const equityKnown = typeof rawEquity === 'number' && rawEquity > 0;
+      if (!equityKnown) console.warn(`[RUN] EQUITY_UNAVAILABLE (${stats?.stats?.equityReason ?? 'unknown'}) - Auto-TP disabled, engine will not open entries`);
+      const currentEquity: number = equityKnown ? rawEquity : 0;
       
       // Generate new run ID
       const runId = `run_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -386,7 +391,9 @@ export function useSessionActions() {
       
       // Calculate Auto-TP target based on mode
       let targetEquity: number | null = null;
-      if (autoTpMode === 'percent' && autoTpValue && autoTpValue > 0) {
+      if (!equityKnown) {
+        targetEquity = null;
+      } else if (autoTpMode === 'percent' && autoTpValue && autoTpValue > 0) {
         targetEquity = currentEquity * (1 + autoTpValue / 100);
       } else if (autoTpMode === 'cash' && autoTpValue && autoTpValue > 0) {
         targetEquity = currentEquity + autoTpValue;
@@ -504,7 +511,7 @@ export function useSessionActions() {
           pnlToday: result.stats.todayPnl || 0,
           tradesToday: result.stats.tradesToday || 0,
           winRate: result.stats.winRate || 0,
-          equity: result.stats.equity || 10000,
+          equity: result.stats.equity ?? 0,
         });
       }
       
@@ -588,7 +595,7 @@ export function useSessionActions() {
           pnlToday: result.stats.todayPnl || 0,
           tradesToday: result.stats.tradesToday || 0,
           winRate: result.stats.winRate || 0,
-          equity: result.stats.equity || 10000,
+          equity: result.stats.equity ?? 0,
         });
       }
       

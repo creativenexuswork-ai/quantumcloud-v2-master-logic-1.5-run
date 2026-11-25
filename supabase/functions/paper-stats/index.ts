@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveAccountEquity } from "../_shared/paper-core.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -75,10 +76,16 @@ serve(async (req) => {
     // Get account
     const { data: account } = await supabase
       .from('accounts')
-      .select('equity')
+      .select('id, equity, type, is_active')
       .eq('user_id', userId)
       .eq('type', 'paper')
-      .maybeSingle();
+      .eq('is_active', true);
+
+    // All realized P&L (compounding base) — not just today
+    const { data: allRealized } = await supabase
+      .from('paper_trades')
+      .select('realized_pnl')
+      .eq('user_id', userId);
 
     // Get historical stats
     const { data: historicalStats } = await supabase
@@ -110,9 +117,17 @@ serve(async (req) => {
       .eq('trade_date', today)
       .maybeSingle();
 
-    const startingEquity = dailyStats?.equity_start ?? account?.equity ?? 10000;
     const realizedPnl = (todayTrades || []).reduce((sum: number, t: any) => sum + Number(t.realized_pnl), 0);
     const unrealizedPnl = (positions || []).reduce((sum: number, p: any) => sum + Number(p.unrealized_pnl || 0), 0);
+    const eq = resolveAccountEquity(
+      account,
+      (allRealized || []).map((t: any) => Number(t.realized_pnl)),
+      (positions || []).map((p: any) => Number(p.unrealized_pnl || 0)),
+    );
+    // Day-start equity is derived from the canonical balance; snapshot is reconciliation-only
+    const startingEquity = eq.ok ? eq.balance - realizedPnl : 0;
+    const snapshotDrift = eq.ok && dailyStats?.equity_start != null
+      ? Number(dailyStats.equity_start) - startingEquity : null;
     const todayPnl = realizedPnl + unrealizedPnl;
     const todayPnlPercent = startingEquity > 0 ? (todayPnl / startingEquity) * 100 : 0;
 
@@ -144,7 +159,11 @@ serve(async (req) => {
     const sessionStatus = config?.session_status || 'idle';
 
     const stats = {
-      equity: startingEquity + todayPnl,
+      equity: eq.ok ? eq.equity : null,
+      balance: eq.ok ? eq.balance : null,
+      equityStatus: eq.ok ? 'OK' : eq.code,
+      equityReason: eq.ok ? null : eq.reason,
+      snapshotDrift,
       todayPnl,
       todayPnlPercent,
       winRate,

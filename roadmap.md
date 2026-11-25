@@ -1,0 +1,11 @@
+# Roadmap — Paper recommission cut 1
+- [x] Canonical equity contract (no 10000 fallback, EQUITY_UNAVAILABLE blocks entries)
+- [x] Remove random direction fallback (no entry on weak evidence)
+- [x] Reachable trailing stop; position-owned SL/TP
+- [x] Mode key normalization (sniper -> scalper, unknown logged)
+- [x] Risk config contract wired to engine; governor replaces halt
+- [x] Deterministic tests (tests/paper-core.test.ts)
+- [ ] Apply pending ledger migration — blocked: database access unavailable
+- [ ] Stage 0 data verification + ledger backfill/reconciliation — blocked: database access
+- [ ] Deploy paper-tick / paper-stats — held: user said do not deploy
+- [ ] Burst duration/TP-style wiring audit — next cut
