@@ -78,20 +78,44 @@ async function main() {
   const symbols = getArg('--symbols', 'BTCUSDT,ETHUSDT').split(',');
   const intervals = getArg('--intervals', '1h,15m').split(',');
   const markets = getArg('--markets', 'spot,futures_um').split(',') as BinanceMarket[];
-  const months = getArg('--months', '2024-12,2025-01').split(',');
+  const monthsArg = getArg('--months', '2024-12,2025-01');
+  const concurrency = Math.max(1, Number(getArg('--concurrency', '8')) || 8);
+  const months: string[] = [];
+  if (monthsArg.includes('..')) {
+    const [startYm, endYm] = monthsArg.split('..');
+    const [sy, sm] = startYm.split('-').map(Number);
+    const [ey, em] = endYm.split('-').map(Number);
+    for (let y = sy; y <= ey; y++) {
+      const mStart = y === sy ? sm : 1;
+      const mEnd = y === ey ? em : 12;
+      for (let m = mStart; m <= mEnd; m++) months.push(`${y}-${String(m).padStart(2, '0')}`);
+    }
+  } else {
+    months.push(...monthsArg.split(','));
+  }
 
-  const manifest: unknown[] = [];
+  const specs: ArchiveSpec[] = [];
   for (const market of markets) {
     for (const symbol of symbols) {
       for (const interval of intervals) {
         for (const month of months) {
-          const entry = await downloadAndVerifyArchive({ market, symbol, interval, month }, outDir);
-          manifest.push(entry);
-          console.log(`[OK] ${market} ${symbol} ${interval} ${month} (${entry.provenance.rowCount} bars, unit=${entry.provenance.timestampUnit}, sha256=${entry.sha256.slice(0, 12)}...)`);
+          specs.push({ market, symbol, interval, month });
         }
       }
     }
   }
+
+  const manifest: unknown[] = new Array(specs.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, specs.length) }, async () => {
+    while (cursor < specs.length) {
+      const idx = cursor++;
+      const spec = specs[idx];
+      const entry = await downloadAndVerifyArchive(spec, outDir);
+      manifest[idx] = entry;
+    }
+  });
+  await Promise.all(workers);
   const manifestPath = join(outDir, 'manifest.json');
   writeFileSync(manifestPath, JSON.stringify({ generatedAt: new Date().toISOString(), entries: manifest }, null, 2));
   console.log(`Manifest written to ${manifestPath} (${manifest.length} archives verified).`);

@@ -1,0 +1,824 @@
+{
+  "generatedAt": "2026-11-25T21:58:44.292Z",
+  "researchOnlyDisclaimer": "Offline historical research only. No automated promotion, no live execution. Past results do not guarantee future performance.",
+  "assumptions": {
+    "costModel": {
+      "spreadBps": 2,
+      "slippageBps": 3,
+      "takerFeeBps": 10
+    },
+    "execution": "Next bar open (latencyBars=1), conservative_sl_first intrabar, gap-through stops.",
+    "unavailableLiveInputs": [
+      "1-second tick mid-price stream -> proxied by OHLCV bar close series (window <= 50)",
+      "Live orderbook / bid-ask quotes -> proxied by BacktestCostModel (spreadBps + slippageBps)",
+      "Live thermostat streak memory -> fixed neutral (aggression=0.5, tag=NORMAL) in baseline"
+    ]
+  },
+  "datasets": {
+    "spot:BTCUSDT:1h": {
+      "archives": 60,
+      "allChecksumsVerified": true,
+      "timestampUnits": [
+        "milliseconds",
+        "microseconds"
+      ],
+      "sampleChecksums": [
+        "a2fa12bec12d942e58dbc7fb223973bd2173dfccf8e09edc501bda40b3c3638e",
+        "d546c6e44b443e34cef5122043c5cdd3b9c76980e23cc408dafd9f6f76d65c05"
+      ],
+      "bars": 43810,
+      "firstIso": "2021-01-01T00:00:00.000Z",
+      "lastIso": "2025-12-31T23:00:00.000Z",
+      "gaps": 7,
+      "duplicates": 0
+    },
+    "spot:ETHUSDT:1h": {
+      "archives": 60,
+      "allChecksumsVerified": true,
+      "timestampUnits": [
+        "milliseconds",
+        "microseconds"
+      ],
+      "sampleChecksums": [
+        "01d6bb8175fb847a256ca1cc14dce06194a86c740d7edc951a5d2835aba9b577",
+        "7a7a35ce7b9be9bafa0a00c47370acc57a48329a3289c21cb19f1185f6430fdb"
+      ],
+      "bars": 43810,
+      "firstIso": "2021-01-01T00:00:00.000Z",
+      "lastIso": "2025-12-31T23:00:00.000Z",
+      "gaps": 7,
+      "duplicates": 0
+    },
+    "futures_um:BTCUSDT:1h": {
+      "archives": 60,
+      "allChecksumsVerified": true,
+      "timestampUnits": [
+        "milliseconds"
+      ],
+      "sampleChecksums": [
+        "00de1eb2f3e3bc7f21b7ab321f1681385726fe7ba55306a7337acfd8f81fedfa",
+        "41e977a06b7806ce1398aca5f9075befffd1e6303db891795f3b179c762709ec"
+      ],
+      "bars": 43824,
+      "firstIso": "2021-01-01T00:00:00.000Z",
+      "lastIso": "2025-12-31T23:00:00.000Z",
+      "gaps": 0,
+      "duplicates": 0
+    },
+    "futures_um:ETHUSDT:1h": {
+      "archives": 60,
+      "allChecksumsVerified": true,
+      "timestampUnits": [
+        "milliseconds"
+      ],
+      "sampleChecksums": [
+        "52b01b6937e57c3299003a91ec93fe8c2560b1ee6cacb24a60c110bf696b6118",
+        "80080e1303ab2c291e53103d703b5364ef7a3da36dff5eaf45044cca74e764ca"
+      ],
+      "bars": 43824,
+      "firstIso": "2021-01-01T00:00:00.000Z",
+      "lastIso": "2025-12-31T23:00:00.000Z",
+      "gaps": 0,
+      "duplicates": 0
+    }
+  },
+  "results": [
+    {
+      "series": "spot:BTCUSDT:1h",
+      "adapter": "faithful_master_v15",
+      "mode": "burst",
+      "trades": 3420,
+      "netReturnPct": -99.9999510926336,
+      "expectancy": -2.923975178147156,
+      "profitFactor": 0.16008272442222207,
+      "maxDrawdownPct": 99.9999510926336,
+      "avgExposurePct": 11.596230946807196,
+      "turnover": 12902.377821198435,
+      "totalFees": 4780.925231083058,
+      "walkForwardOosAvgPct": -52.204494019416224,
+      "regimeBreakdown": {
+        "range_normal": {
+          "trades": 2466,
+          "winRatePct": 30.008110300081103,
+          "netPnl": -8222.860224289787
+        },
+        "range_low": {
+          "trades": 379,
+          "winRatePct": 34.03693931398417,
+          "netPnl": -793.9836894164564
+        },
+        "range_high": {
+          "trades": 531,
+          "winRatePct": 29.001883239171374,
+          "netPnl": -975.9387681404286
+        },
+        "trend_normal": {
+          "trades": 44,
+          "winRatePct": 31.818181818181817,
+          "netPnl": -7.212427416609892
+        }
+      }
+    },
+    {
+      "series": "spot:BTCUSDT:1h",
+      "adapter": "prototype_sma_range",
+      "mode": "burst",
+      "trades": 6226,
+      "netReturnPct": -99.9999999540025,
+      "expectancy": -1.6061676831674094,
+      "profitFactor": 0.2114237414410507,
+      "maxDrawdownPct": 99.99999995416212,
+      "avgExposurePct": 27.768928821423614,
+      "turnover": 13755.905049435634,
+      "totalFees": 4386.2074499036935,
+      "walkForwardOosAvgPct": null,
+      "regimeBreakdown": null
+    },
+    {
+      "series": "spot:BTCUSDT:1h",
+      "adapter": "faithful_master_v15",
+      "mode": "scalper",
+      "trades": 3724,
+      "netReturnPct": -99.99999999916592,
+      "expectancy": -2.6852846401494794,
+      "profitFactor": 0.040318165841911995,
+      "maxDrawdownPct": 99.99999999916592,
+      "avgExposurePct": 8.009434309670919,
+      "turnover": 24052.068366465875,
+      "totalFees": 4875.752593364962,
+      "walkForwardOosAvgPct": -75.00049255618123,
+      "regimeBreakdown": {
+        "range_normal": {
+          "trades": 2657,
+          "winRatePct": 24.35077154685736,
+          "netPnl": -7702.695414562789
+        },
+        "range_low": {
+          "trades": 389,
+          "winRatePct": 22.10796915167095,
+          "netPnl": -1297.617864849085
+        },
+        "range_high": {
+          "trades": 633,
+          "winRatePct": 24.328593996840443,
+          "netPnl": -999.1597725736187
+        },
+        "trend_normal": {
+          "trades": 45,
+          "winRatePct": 13.333333333333334,
+          "netPnl": -0.5269479310960645
+        }
+      }
+    },
+    {
+      "series": "spot:BTCUSDT:1h",
+      "adapter": "prototype_sma_range",
+      "mode": "scalper",
+      "trades": 21409,
+      "netReturnPct": -100,
+      "expectancy": -0.4670932785277215,
+      "profitFactor": 0.16075447859366201,
+      "maxDrawdownPct": 100,
+      "avgExposurePct": 56.254899533164284,
+      "turnover": 86126.94572253875,
+      "totalFees": 4787.136200222994,
+      "walkForwardOosAvgPct": null,
+      "regimeBreakdown": null
+    },
+    {
+      "series": "spot:BTCUSDT:1h",
+      "adapter": "faithful_master_v15",
+      "mode": "trend",
+      "trades": 1706,
+      "netReturnPct": -93.82379734271528,
+      "expectancy": -5.499636421026709,
+      "profitFactor": 0.5738100955799865,
+      "maxDrawdownPct": 94.16819173075687,
+      "avgExposurePct": 20.98924802322646,
+      "turnover": 2191.0787595770894,
+      "totalFees": 4669.663802424994,
+      "walkForwardOosAvgPct": -8.131019517179734,
+      "regimeBreakdown": {
+        "range_normal": {
+          "trades": 1454,
+          "winRatePct": 25.928473177441543,
+          "netPnl": -8820.8952890578
+        },
+        "range_high": {
+          "trades": 214,
+          "winRatePct": 28.971962616822427,
+          "netPnl": -567.7437371747764
+        },
+        "trend_normal": {
+          "trades": 38,
+          "winRatePct": 34.21052631578947,
+          "netPnl": 6.259291961030748
+        }
+      }
+    },
+    {
+      "series": "spot:BTCUSDT:1h",
+      "adapter": "prototype_sma_range",
+      "mode": "trend",
+      "trades": 18185,
+      "netReturnPct": -99.99999999999983,
+      "expectancy": -0.5499037668407981,
+      "profitFactor": 0.5592300258182932,
+      "maxDrawdownPct": 99.99999999999983,
+      "avgExposurePct": 124.91236771706843,
+      "turnover": 47499.83008670302,
+      "totalFees": 6229.839892222927,
+      "walkForwardOosAvgPct": null,
+      "regimeBreakdown": null
+    },
+    {
+      "series": "spot:ETHUSDT:1h",
+      "adapter": "faithful_master_v15",
+      "mode": "burst",
+      "trades": 3844,
+      "netReturnPct": -99.99999291842984,
+      "expectancy": -2.6014566315928604,
+      "profitFactor": 0.16799389689110883,
+      "maxDrawdownPct": 99.99999291842984,
+      "avgExposurePct": 5.135846608170179,
+      "turnover": 18107.94418553037,
+      "totalFees": 4879.12670837185,
+      "walkForwardOosAvgPct": -54.743982706246925,
+      "regimeBreakdown": {
+        "range_normal": {
+          "trades": 3144,
+          "winRatePct": 30.375318066157757,
+          "netPnl": -7411.213831518664
+        },
+        "range_low": {
+          "trades": 255,
+          "winRatePct": 23.137254901960784,
+          "netPnl": -604.8668500781463
+        },
+        "trend_normal": {
+          "trades": 16,
+          "winRatePct": 18.75,
+          "netPnl": -392.90433378660435
+        },
+        "trend_low": {
+          "trades": 20,
+          "winRatePct": 5,
+          "netPnl": -1143.9090058934023
+        },
+        "range_high": {
+          "trades": 409,
+          "winRatePct": 33.007334963325185,
+          "netPnl": -447.1052705661924
+        }
+      }
+    },
+    {
+      "series": "spot:ETHUSDT:1h",
+      "adapter": "prototype_sma_range",
+      "mode": "burst",
+      "trades": 6416,
+      "netReturnPct": -99.9999999737282,
+      "expectancy": -1.5586034908623492,
+      "profitFactor": 0.21504657456329837,
+      "maxDrawdownPct": 99.9999999737282,
+      "avgExposurePct": 14.156707752269128,
+      "turnover": 14448.208730450993,
+      "totalFees": 4422.121645581156,
+      "walkForwardOosAvgPct": null,
+      "regimeBreakdown": null
+    },
+    {
+      "series": "spot:ETHUSDT:1h",
+      "adapter": "faithful_master_v15",
+      "mode": "scalper",
+      "trades": 3935,
+      "netReturnPct": -99.99999999990078,
+      "expectancy": -2.541296060988578,
+      "profitFactor": 0.04655663548196744,
+      "maxDrawdownPct": 99.99999999990078,
+      "avgExposurePct": 2.4864452393689525,
+      "turnover": 33826.94474191767,
+      "totalFees": 5005.686399424477,
+      "walkForwardOosAvgPct": -74.73209897063542,
+      "regimeBreakdown": {
+        "range_normal": {
+          "trades": 3200,
+          "winRatePct": 22.59375,
+          "netPnl": -6663.732747092406
+        },
+        "range_low": {
+          "trades": 260,
+          "winRatePct": 18.076923076923077,
+          "netPnl": -825.603289880526
+        },
+        "trend_normal": {
+          "trades": 16,
+          "winRatePct": 18.75,
+          "netPnl": -468.6679379803594
+        },
+        "trend_low": {
+          "trades": 20,
+          "winRatePct": 5,
+          "netPnl": -1323.5155182809624
+        },
+        "range_high": {
+          "trades": 439,
+          "winRatePct": 25.740318906605925,
+          "netPnl": -718.4805067558113
+        }
+      }
+    },
+    {
+      "series": "spot:ETHUSDT:1h",
+      "adapter": "prototype_sma_range",
+      "mode": "scalper",
+      "trades": 26037,
+      "netReturnPct": -100,
+      "expectancy": -0.3840688251334637,
+      "profitFactor": 0.11169895844503526,
+      "maxDrawdownPct": 100,
+      "avgExposurePct": 38.9192363064519,
+      "turnover": 86975.05947955104,
+      "totalFees": 4217.601915345507,
+      "walkForwardOosAvgPct": null,
+      "regimeBreakdown": null
+    },
+    {
+      "series": "spot:ETHUSDT:1h",
+      "adapter": "faithful_master_v15",
+      "mode": "trend",
+      "trades": 2313,
+      "netReturnPct": -94.08477174211444,
+      "expectancy": -4.067651177782748,
+      "profitFactor": 0.63481172666402,
+      "maxDrawdownPct": 94.53953353560449,
+      "avgExposurePct": 13.879011761010162,
+      "turnover": 3134.5420414711275,
+      "totalFees": 5603.404297167579,
+      "walkForwardOosAvgPct": -13.325685752099313,
+      "regimeBreakdown": {
+        "range_normal": {
+          "trades": 2038,
+          "winRatePct": 28.949950932286555,
+          "netPnl": -8702.792527425912
+        },
+        "trend_normal": {
+          "trades": 14,
+          "winRatePct": 42.857142857142854,
+          "netPnl": 84.52122252968745
+        },
+        "trend_low": {
+          "trades": 20,
+          "winRatePct": 20,
+          "netPnl": -430.13900681279404
+        },
+        "range_high": {
+          "trades": 241,
+          "winRatePct": 27.800829875518673,
+          "netPnl": -360.066862502456
+        }
+      }
+    },
+    {
+      "series": "spot:ETHUSDT:1h",
+      "adapter": "prototype_sma_range",
+      "mode": "trend",
+      "trades": 24156,
+      "netReturnPct": -100,
+      "expectancy": -0.41397582381188863,
+      "profitFactor": 0.5762838826870711,
+      "maxDrawdownPct": 100,
+      "avgExposurePct": 102.4130416510868,
+      "turnover": 48448.960661613746,
+      "totalFees": 6540.258507417756,
+      "walkForwardOosAvgPct": null,
+      "regimeBreakdown": null
+    },
+    {
+      "series": "futures_um:BTCUSDT:1h",
+      "adapter": "faithful_master_v15",
+      "mode": "burst",
+      "trades": 3417,
+      "netReturnPct": -99.99992329756911,
+      "expectancy": -2.9265415070989063,
+      "profitFactor": 0.16960258317207344,
+      "maxDrawdownPct": 99.99992329756911,
+      "avgExposurePct": 10.82688937338317,
+      "turnover": 10162.690841961119,
+      "totalFees": 4899.653254868916,
+      "walkForwardOosAvgPct": -54.503740087434906,
+      "regimeBreakdown": {
+        "range_normal": {
+          "trades": 2481,
+          "winRatePct": 31.116485288190244,
+          "netPnl": -8362.685317549687
+        },
+        "range_low": {
+          "trades": 368,
+          "winRatePct": 35.32608695652174,
+          "netPnl": -675.100611592332
+        },
+        "range_high": {
+          "trades": 525,
+          "winRatePct": 29.714285714285715,
+          "netPnl": -950.3322253775749
+        },
+        "trend_normal": {
+          "trades": 43,
+          "winRatePct": 30.23255813953488,
+          "netPnl": -11.87417523736636
+        }
+      }
+    },
+    {
+      "series": "futures_um:BTCUSDT:1h",
+      "adapter": "prototype_sma_range",
+      "mode": "burst",
+      "trades": 5934,
+      "netReturnPct": -99.99999973667444,
+      "expectancy": -1.6852039052355032,
+      "profitFactor": 0.21589767922500167,
+      "maxDrawdownPct": 99.99999973761287,
+      "avgExposurePct": 25.28659380781027,
+      "turnover": 13250.875052431324,
+      "totalFees": 4431.312604732422,
+      "walkForwardOosAvgPct": null,
+      "regimeBreakdown": null
+    },
+    {
+      "series": "futures_um:BTCUSDT:1h",
+      "adapter": "faithful_master_v15",
+      "mode": "scalper",
+      "trades": 3691,
+      "netReturnPct": -99.9999999987979,
+      "expectancy": -2.709292874527185,
+      "profitFactor": 0.04027752545613397,
+      "maxDrawdownPct": 99.9999999987979,
+      "avgExposurePct": 6.337876709423094,
+      "turnover": 18267.415695287465,
+      "totalFees": 4875.347062688419,
+      "walkForwardOosAvgPct": -75.5555401219371,
+      "regimeBreakdown": {
+        "range_normal": {
+          "trades": 2658,
+          "winRatePct": 24.416854778028593,
+          "netPnl": -8029.631033714246
+        },
+        "range_low": {
+          "trades": 379,
+          "winRatePct": 24.010554089709764,
+          "netPnl": -1141.5520514137204
+        },
+        "range_high": {
+          "trades": 611,
+          "winRatePct": 24.549918166939445,
+          "netPnl": -827.7892845742062
+        },
+        "trend_normal": {
+          "trades": 43,
+          "winRatePct": 13.953488372093023,
+          "netPnl": -1.0276301776174637
+        }
+      }
+    },
+    {
+      "series": "futures_um:BTCUSDT:1h",
+      "adapter": "prototype_sma_range",
+      "mode": "scalper",
+      "trades": 21374,
+      "netReturnPct": -100,
+      "expectancy": -0.4678581454103101,
+      "profitFactor": 0.15011324471179768,
+      "maxDrawdownPct": 100,
+      "avgExposurePct": 53.65342887222376,
+      "turnover": 85508.41535905449,
+      "totalFees": 4658.156367287023,
+      "walkForwardOosAvgPct": null,
+      "regimeBreakdown": null
+    },
+    {
+      "series": "futures_um:BTCUSDT:1h",
+      "adapter": "faithful_master_v15",
+      "mode": "trend",
+      "trades": 1721,
+      "netReturnPct": -85.85950410710333,
+      "expectancy": -4.988931092800893,
+      "profitFactor": 0.6886158775564384,
+      "maxDrawdownPct": 86.51882546221992,
+      "avgExposurePct": 19.61035443680151,
+      "turnover": 1966.3730318161188,
+      "totalFees": 6130.184024385028,
+      "walkForwardOosAvgPct": -8.303760258241805,
+      "regimeBreakdown": {
+        "range_normal": {
+          "trades": 1468,
+          "winRatePct": 28.47411444141689,
+          "netPnl": -8348.600209462174
+        },
+        "range_high": {
+          "trades": 214,
+          "winRatePct": 34.112149532710276,
+          "netPnl": -251.88121722803416
+        },
+        "trend_normal": {
+          "trades": 39,
+          "winRatePct": 35.8974358974359,
+          "netPnl": 14.531015979877976
+        }
+      }
+    },
+    {
+      "series": "futures_um:BTCUSDT:1h",
+      "adapter": "prototype_sma_range",
+      "mode": "trend",
+      "trades": 18425,
+      "netReturnPct": -99.99999999999974,
+      "expectancy": -0.5427408412482916,
+      "profitFactor": 0.5706151549150522,
+      "maxDrawdownPct": 99.99999999999976,
+      "avgExposurePct": 123.62578764839226,
+      "turnover": 47760.951556152955,
+      "totalFees": 6434.387802565816,
+      "walkForwardOosAvgPct": null,
+      "regimeBreakdown": null
+    },
+    {
+      "series": "futures_um:ETHUSDT:1h",
+      "adapter": "faithful_master_v15",
+      "mode": "burst",
+      "trades": 3682,
+      "netReturnPct": -99.99999067988708,
+      "expectancy": -2.7159150103174117,
+      "profitFactor": 0.13700624353359545,
+      "maxDrawdownPct": 99.99999077989848,
+      "avgExposurePct": 5.061170629195736,
+      "turnover": 15688.467868023768,
+      "totalFees": 4503.4484321226,
+      "walkForwardOosAvgPct": -53.51235171533301,
+      "regimeBreakdown": {
+        "range_normal": {
+          "trades": 2929,
+          "winRatePct": 29.429839535677704,
+          "netPnl": -6913.78693749106
+        },
+        "range_low": {
+          "trades": 286,
+          "winRatePct": 23.426573426573427,
+          "netPnl": -796.6270663998524
+        },
+        "trend_normal": {
+          "trades": 24,
+          "winRatePct": 29.166666666666668,
+          "netPnl": -388.3953113876348
+        },
+        "trend_low": {
+          "trades": 22,
+          "winRatePct": 4.545454545454546,
+          "netPnl": -1277.5600120749189
+        },
+        "range_high": {
+          "trades": 421,
+          "winRatePct": 31.828978622327792,
+          "netPnl": -623.6297406352047
+        }
+      }
+    },
+    {
+      "series": "futures_um:ETHUSDT:1h",
+      "adapter": "prototype_sma_range",
+      "mode": "burst",
+      "trades": 6107,
+      "netReturnPct": -99.99999992975019,
+      "expectancy": -1.6374652027140877,
+      "profitFactor": 0.2040337320862138,
+      "maxDrawdownPct": 99.99999992975019,
+      "avgExposurePct": 11.987930103417082,
+      "turnover": 13762.38976857859,
+      "totalFees": 4312.038583101965,
+      "walkForwardOosAvgPct": null,
+      "regimeBreakdown": null
+    },
+    {
+      "series": "futures_um:ETHUSDT:1h",
+      "adapter": "faithful_master_v15",
+      "mode": "scalper",
+      "trades": 3774,
+      "netReturnPct": -99.9999999997659,
+      "expectancy": -2.6497085320552753,
+      "profitFactor": 0.042094526166252186,
+      "maxDrawdownPct": 99.9999999997659,
+      "avgExposurePct": 2.301144047793914,
+      "turnover": 28699.540057200607,
+      "totalFees": 4913.03108783886,
+      "walkForwardOosAvgPct": -72.35519711691157,
+      "regimeBreakdown": {
+        "range_normal": {
+          "trades": 2979,
+          "winRatePct": 22.020812353138638,
+          "netPnl": -6366.193192802259
+        },
+        "range_low": {
+          "trades": 295,
+          "winRatePct": 17.966101694915253,
+          "netPnl": -890.2267971120243
+        },
+        "trend_normal": {
+          "trades": 24,
+          "winRatePct": 20.833333333333336,
+          "netPnl": -619.0867329782867
+        },
+        "trend_low": {
+          "trades": 22,
+          "winRatePct": 4.545454545454546,
+          "netPnl": -1478.2116916421369
+        },
+        "range_high": {
+          "trades": 454,
+          "winRatePct": 25.11013215859031,
+          "netPnl": -646.2815854418776
+        }
+      }
+    },
+    {
+      "series": "futures_um:ETHUSDT:1h",
+      "adapter": "prototype_sma_range",
+      "mode": "scalper",
+      "trades": 26108,
+      "netReturnPct": -100,
+      "expectancy": -0.3830243603493145,
+      "profitFactor": 0.10507751631481375,
+      "maxDrawdownPct": 100,
+      "avgExposurePct": 36.28885842614326,
+      "turnover": 87266.8327859474,
+      "totalFees": 4145.487142483965,
+      "walkForwardOosAvgPct": null,
+      "regimeBreakdown": null
+    },
+    {
+      "series": "futures_um:ETHUSDT:1h",
+      "adapter": "faithful_master_v15",
+      "mode": "trend",
+      "trades": 2211,
+      "netReturnPct": -92.87623534569224,
+      "expectancy": -4.200643841958027,
+      "profitFactor": 0.6139128424563085,
+      "maxDrawdownPct": 93.32231568297456,
+      "avgExposurePct": 12.923955297271592,
+      "turnover": 2866.0578509607626,
+      "totalFees": 5186.164884430588,
+      "walkForwardOosAvgPct": -13.149731558264019,
+      "regimeBreakdown": {
+        "range_normal": {
+          "trades": 1930,
+          "winRatePct": 28.911917098445596,
+          "netPnl": -8132.242791169607
+        },
+        "trend_normal": {
+          "trades": 21,
+          "winRatePct": 38.095238095238095,
+          "netPnl": 6.715868792180931
+        },
+        "trend_low": {
+          "trades": 22,
+          "winRatePct": 18.181818181818183,
+          "netPnl": -551.6968342289708
+        },
+        "range_high": {
+          "trades": 238,
+          "winRatePct": 29.831932773109244,
+          "netPnl": -610.3997779628255
+        }
+      }
+    },
+    {
+      "series": "futures_um:ETHUSDT:1h",
+      "adapter": "prototype_sma_range",
+      "mode": "trend",
+      "trades": 24611,
+      "netReturnPct": -100,
+      "expectancy": -0.4063223761732487,
+      "profitFactor": 0.560135495194766,
+      "maxDrawdownPct": 100,
+      "avgExposurePct": 99.89102353634244,
+      "turnover": 48870.19012189436,
+      "totalFees": 6245.946256987093,
+      "walkForwardOosAvgPct": null,
+      "regimeBreakdown": null
+    }
+  ],
+  "primaryTrendSensitivity": {
+    "series": "spot:BTCUSDT:1h",
+    "scenarios": [
+      {
+        "label": "baseline",
+        "netReturnPct": -93.82379734271528,
+        "maxDrawdownPct": 94.16819173075687,
+        "totalTrades": 1706,
+        "profitFactor": 0.5738100955799865
+      },
+      {
+        "label": "2x_fees",
+        "netReturnPct": -98.88719566135946,
+        "maxDrawdownPct": 98.9451704888792,
+        "totalTrades": 1706,
+        "profitFactor": 0.42383135194274446
+      },
+      {
+        "label": "2x_slippage",
+        "netReturnPct": -96.4673170813436,
+        "maxDrawdownPct": 96.66286754789523,
+        "totalTrades": 1718,
+        "profitFactor": 0.5041319404439656
+      },
+      {
+        "label": "2x_spread",
+        "netReturnPct": -95.00019444506648,
+        "maxDrawdownPct": 95.27831320082798,
+        "totalTrades": 1715,
+        "profitFactor": 0.5442710072697765
+      },
+      {
+        "label": "latency_2bars",
+        "netReturnPct": -92.34098796950171,
+        "maxDrawdownPct": 92.75979189795159,
+        "totalTrades": 1625,
+        "profitFactor": 0.565152929699742
+      },
+      {
+        "label": "optimistic_tp_first",
+        "netReturnPct": -92.38915533216762,
+        "maxDrawdownPct": 92.81354752544615,
+        "totalTrades": 1706,
+        "profitFactor": 0.6166068795739519
+      }
+    ]
+  },
+  "spotFaithfulPortfolio": {
+    "combinedNetReturnPct": -99.99996540653984,
+    "combinedMaxDrawdownPct": 99.9999656215036,
+    "returnCorrelationMatrix": {
+      "BTCUSDT_burst": {
+        "BTCUSDT_burst": 1,
+        "BTCUSDT_scalper": 0.785465515322754,
+        "BTCUSDT_trend": 0.4926962379590152,
+        "ETHUSDT_burst": 0.17277756490048435,
+        "ETHUSDT_scalper": 0.148390182311169,
+        "ETHUSDT_trend": 0.1498602359618044
+      },
+      "BTCUSDT_scalper": {
+        "BTCUSDT_burst": 0.785465515322754,
+        "BTCUSDT_scalper": 1,
+        "BTCUSDT_trend": 0.33020993607159266,
+        "ETHUSDT_burst": 0.17315676654931214,
+        "ETHUSDT_scalper": 0.1734225365635232,
+        "ETHUSDT_trend": 0.10805148674125853
+      },
+      "BTCUSDT_trend": {
+        "BTCUSDT_burst": 0.4926962379590152,
+        "BTCUSDT_scalper": 0.33020993607159266,
+        "BTCUSDT_trend": 1,
+        "ETHUSDT_burst": 0.13414017424613725,
+        "ETHUSDT_scalper": 0.09916337817616255,
+        "ETHUSDT_trend": 0.22870778088792268
+      },
+      "ETHUSDT_burst": {
+        "BTCUSDT_burst": 0.17277756490048435,
+        "BTCUSDT_scalper": 0.17315676654931214,
+        "BTCUSDT_trend": 0.13414017424613725,
+        "ETHUSDT_burst": 1,
+        "ETHUSDT_scalper": 0.8073245626001341,
+        "ETHUSDT_trend": 0.5144883704135612
+      },
+      "ETHUSDT_scalper": {
+        "BTCUSDT_burst": 0.148390182311169,
+        "BTCUSDT_scalper": 0.1734225365635232,
+        "BTCUSDT_trend": 0.09916337817616255,
+        "ETHUSDT_burst": 0.8073245626001341,
+        "ETHUSDT_scalper": 1,
+        "ETHUSDT_trend": 0.3392707592531854
+      },
+      "ETHUSDT_trend": {
+        "BTCUSDT_burst": 0.1498602359618044,
+        "BTCUSDT_scalper": 0.10805148674125853,
+        "BTCUSDT_trend": 0.22870778088792268,
+        "ETHUSDT_burst": 0.5144883704135612,
+        "ETHUSDT_scalper": 0.3392707592531854,
+        "ETHUSDT_trend": 1
+      }
+    }
+  },
+  "guardedVariantExperiment": {
+    "series": "spot:BTCUSDT:1h",
+    "trialsEvaluated": 4,
+    "multipleTestingNote": "Evaluated 4 parameter sets on train/validation; test set untouched until final evaluation (Bonferroni alpha=0.0125).",
+    "selectedParams": {
+      "stopPct": 2.5,
+      "tpMultiplier": 3
+    },
+    "trainNetReturnPct": -21.466420282726258,
+    "validationNetReturnPct": 13.903535988434667,
+    "testNetReturnPct": -28.879442196500165,
+    "testMaxDrawdownPct": 29.40167680667673,
+    "testTrades": 134
+  }
+}

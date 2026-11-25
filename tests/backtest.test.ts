@@ -11,6 +11,12 @@ import {
 import { buildSyntheticFixture } from '../research/backtest/fixtures';
 import { FAITHFUL_MASTER_LOGIC_ADAPTERS, PROTOTYPE_ADAPTERS } from '../research/backtest/strategies';
 import type { BacktestConfig, OhlcvBar, StrategyAdapter } from '../research/backtest/types';
+import {
+  MASTER_MODE_PROFILES,
+  classifyRegimeFromPrices,
+  scoreMasterCandidate,
+  sessionQualityFromUtcHour,
+} from '../supabase/functions/_shared/master-logic-core';
 
 const baseConfig: BacktestConfig = {
   symbol: 'BTCUSD',
@@ -226,5 +232,26 @@ describe('backtest engine guarantees', () => {
     const eodRes = runBacktest(flatBars, { ...baseConfig, maxConcurrentPositions: 1 }, alwaysLong);
     expect(eodRes.trades).toHaveLength(1);
     expect(eodRes.trades[0].exitReason).toBe('end_of_data');
+  });
+
+  it('maintains bar-for-bar decision parity between FAITHFUL_MASTER_LOGIC_ADAPTERS and master-logic-core', () => {
+    const bars = buildSyntheticFixture(60, 50000);
+    for (const mode of ['burst', 'scalper', 'trend'] as const) {
+      const profile = MASTER_MODE_PROFILES[mode];
+      for (let i = 10; i < bars.length; i++) {
+        const slice = bars.slice(0, i + 1);
+        const adapterSig = FAITHFUL_MASTER_LOGIC_ADAPTERS[mode](slice);
+        const regime = classifyRegimeFromPrices('RESEARCH', slice.slice(-50).map(b => b.close));
+        const sq = sessionQualityFromUtcHour(new Date(slice[slice.length - 1].ts).getUTCHours());
+        const coreDec = scoreMasterCandidate(profile, regime, sq, 0.5, 'NORMAL', 0);
+        if (coreDec.passed && coreDec.side) {
+          expect(adapterSig?.side).toBe(coreDec.side);
+          expect(adapterSig?.stopPct).toBe(profile.defaultStopPercent);
+          expect(adapterSig?.tpMultiplier).toBe(profile.defaultTPMultiplier);
+        } else {
+          expect(adapterSig).toBeNull();
+        }
+      }
+    }
   });
 });
