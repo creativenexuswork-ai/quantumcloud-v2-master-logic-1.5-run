@@ -117,13 +117,16 @@ serve(async (req) => {
       .eq('trade_date', today)
       .maybeSingle();
 
-    const realizedPnl = (todayTrades || []).reduce((sum: number, t: any) => sum + Number(t.realized_pnl), 0);
     const unrealizedPnl = (positions || []).reduce((sum: number, p: any) => sum + Number(p.unrealized_pnl || 0), 0);
     const eq = resolveAccountEquity(
       account,
       allRealized || [],
       (positions || []).map((p: any) => Number(p.unrealized_pnl || 0)),
     );
+    const scopedTodayTrades = eq.ok
+      ? (todayTrades || []).filter((t: any) => t.account_id === eq.accountId)
+      : (todayTrades || []);
+    const realizedPnl = scopedTodayTrades.reduce((sum: number, t: any) => sum + Number(t.realized_pnl), 0);
     // Day-start equity is derived from the canonical balance; snapshot is reconciliation-only
     const startingEquity = eq.ok ? eq.balance - realizedPnl : 0;
     const snapshotDrift = eq.ok && dailyStats?.equity_start != null

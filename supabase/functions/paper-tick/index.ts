@@ -543,6 +543,7 @@ interface MasterLogicContext {
   maxOpenTrades: number;
   maxPerSymbolExposurePct: number;
   costModel: CostModelConfig;
+  burstSize?: number;
   allowEntries: boolean;
   governorSizeMultiplier: number;
   openPositions: Position[];
@@ -765,7 +766,11 @@ function runMasterLogicV15(ctx: MasterLogicContext): {
   diagnostics.passedFilters = filtered.length;
   
   // 8. Select top candidates
-  const maxPerTick = Math.min(activeProfile.maxEntriesPerTick, availableSlots);
+  const isBurstActive = (adaptiveSubMode || effectiveMode) === 'burst';
+  const modeCap = isBurstActive && ctx.burstSize && ctx.burstSize > 0
+    ? Math.min(activeProfile.maxEntriesPerTick, ctx.burstSize)
+    : activeProfile.maxEntriesPerTick;
+  const maxPerTick = Math.min(modeCap, availableSlots);
   const selected = filtered.slice(0, maxPerTick);
   
   // 9. Generate orders
@@ -932,6 +937,7 @@ serve(async (req) => {
       const { data: claimedPositions } = await supabase.from('paper_positions').delete().eq('user_id', userId).select('*');
       const closedCount = (claimedPositions || []).length;
       let closePnl = 0;
+      let closedWins = 0;
       
       const { data: existingTrades } = await supabase.from('paper_trades').select('*').eq('user_id', userId).eq('session_date', today);
       const existingRealizedPnl = (existingTrades || []).reduce((sum: number, t: any) => sum + Number(t.realized_pnl), 0);
@@ -944,6 +950,7 @@ serve(async (req) => {
         const tradeRecords = (claimedPositions || []).map((pos: any) => {
           const closed = buildCloseRecord(pos, ticks[pos.symbol], 'take_profit', costModel, userId, today);
           closePnl += closed.pnl;
+          if (closed.pnl > 0) closedWins++;
           return closed.record;
         });
         
@@ -958,7 +965,7 @@ serve(async (req) => {
       
       const totalRealizedPnl = existingRealizedPnl + closePnl;
       const finalTradesToday = (existingTrades?.length || 0) + closedCount;
-      const wins = (existingTrades || []).filter((t: any) => Number(t.realized_pnl) > 0).length + (closePnl > 0 ? 1 : 0);
+      const wins = (existingTrades || []).filter((t: any) => Number(t.realized_pnl) > 0).length + closedWins;
       
       return new Response(JSON.stringify({ 
         success: true, action: 'takeProfit', closedCount,
@@ -1190,9 +1197,8 @@ serve(async (req) => {
     for (const pos of (currentPositions || [])) {
       const tick = ticks[pos.symbol];
       if (!tick) continue;
-      const currentPrice = pos.side === 'long' ? tick.bid : tick.ask;
-      const priceDiff = pos.side === 'long' ? currentPrice - Number(pos.entry_price) : Number(pos.entry_price) - currentPrice;
-      const unrealizedPnl = priceDiff * Number(pos.size);
+      const exitMark = executionPrice(pos.side, 'exit', tick, costModel);
+      const unrealizedPnl = netClosePnl(pos.side, Number(pos.entry_price), exitMark, Number(pos.size), costModel).net;
       await supabase.from('paper_positions').update({ unrealized_pnl: unrealizedPnl }).eq('id', pos.id);
     }
 
@@ -1333,6 +1339,7 @@ serve(async (req) => {
         maxOpenTrades: risk.maxOpenTrades,
         maxPerSymbolExposurePct: risk.maxPerSymbolExposurePct,
         costModel: risk.costModel,
+        burstSize: Number(burstConfig?.size) || DEFAULT_BURST_CONFIG.size,
         allowEntries,
         governorSizeMultiplier: gov.sizeMultiplier,
         openPositions: (finalPositions || []) as Position[],
