@@ -76,7 +76,7 @@ serve(async (req) => {
     // Get account
     const { data: account } = await supabase
       .from('accounts')
-      .select('id, equity, type, is_active')
+      .select('id, equity, type, is_active, opening_capital_set_at')
       .eq('user_id', userId)
       .eq('type', 'paper')
       .eq('is_active', true);
@@ -84,7 +84,7 @@ serve(async (req) => {
     // All realized P&L (compounding base) — not just today
     const { data: allRealized } = await supabase
       .from('paper_trades')
-      .select('realized_pnl')
+      .select('realized_pnl, account_id')
       .eq('user_id', userId);
 
     // Get historical stats
@@ -121,7 +121,7 @@ serve(async (req) => {
     const unrealizedPnl = (positions || []).reduce((sum: number, p: any) => sum + Number(p.unrealized_pnl || 0), 0);
     const eq = resolveAccountEquity(
       account,
-      (allRealized || []).map((t: any) => Number(t.realized_pnl)),
+      allRealized || [],
       (positions || []).map((p: any) => Number(p.unrealized_pnl || 0)),
     );
     // Day-start equity is derived from the canonical balance; snapshot is reconciliation-only

@@ -4,23 +4,43 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   normalizeModeKey, normalizeEnabledModes, normalizeRiskConfig, resolveAccountEquity,
   decideDirection, evaluateExit, governor, positionRisk, netClosePnl, sizeFromRisk,
-  type EquityResult, type RiskConfig,
+  executionPrice, canAddSymbolExposure,
+  type EquityResult, type RiskConfig, type CostModelConfig,
 } from "../_shared/paper-core.ts";
 
-// Canonical equity loader: active paper account (must be exactly one) + all realized + open unrealized.
+// Canonical equity loader: requires verified baseline + account-scoped realized trades.
 // deno-lint-ignore no-explicit-any
 async function loadEquity(supabase: any, userId: string, unrealizedOverride?: number[]): Promise<EquityResult> {
   const [{ data: accts, error: aErr }, { data: realized, error: tErr }, { data: open, error: pErr }] = await Promise.all([
-    supabase.from('accounts').select('id, equity, type, is_active').eq('user_id', userId).eq('type', 'paper').eq('is_active', true),
-    supabase.from('paper_trades').select('realized_pnl').eq('user_id', userId),
+    supabase.from('accounts').select('id, equity, type, is_active, opening_capital_set_at').eq('user_id', userId).eq('type', 'paper').eq('is_active', true),
+    supabase.from('paper_trades').select('realized_pnl, account_id').eq('user_id', userId),
     supabase.from('paper_positions').select('unrealized_pnl').eq('user_id', userId).eq('closed', false),
   ]);
   if (aErr || tErr || pErr) return { ok: false, code: 'EQUITY_UNAVAILABLE', reason: 'LOAD_FAILED' };
   return resolveAccountEquity(
     accts,
-    (realized || []).map((t: any) => Number(t.realized_pnl)),
+    realized || [],
     unrealizedOverride ?? (open || []).map((p: any) => Number(p.unrealized_pnl || 0)),
   );
+}
+
+// Shared close accounting helper used by all close paths (manual TP, global close, burst TP, engine exits).
+// deno-lint-ignore no-explicit-any
+function buildCloseRecord(pos: any, tick: PriceTick | undefined, reason: string, costModel: CostModelConfig, userId: string, today: string) {
+  const entry = Number(pos.entry_price);
+  const size = Number(pos.size);
+  const exitPrice = tick ? executionPrice(pos.side, 'exit', tick, costModel) : entry;
+  const { net } = netClosePnl(pos.side, entry, exitPrice, size, costModel);
+  return {
+    record: {
+      user_id: userId, symbol: pos.symbol, mode: pos.mode, side: pos.side,
+      size: pos.size, entry_price: pos.entry_price, exit_price: exitPrice,
+      sl: pos.sl, tp: pos.tp, opened_at: pos.opened_at,
+      realized_pnl: net, reason, session_date: today, batch_id: pos.batch_id,
+    },
+    pnl: net,
+    exitPrice,
+  };
 }
 
 function equityFields(eq: EquityResult) {
@@ -40,7 +60,7 @@ const DEFAULT_RISK_CONFIG = {
   maxDailyLossPercent: 5,
   maxConcurrentRiskPercent: 10,
   maxOpenTrades: 20,
-  maxPerSymbolExposure: 10,
+  maxPerSymbolExposure: 30,
   riskPerTrade: 2,
 };
 
@@ -521,6 +541,8 @@ interface MasterLogicContext {
   equity: number;
   baseRiskPercent: number;
   maxOpenTrades: number;
+  maxPerSymbolExposurePct: number;
+  costModel: CostModelConfig;
   allowEntries: boolean;
   governorSizeMultiplier: number;
   openPositions: Position[];
@@ -749,6 +771,12 @@ function runMasterLogicV15(ctx: MasterLogicContext): {
   // 9. Generate orders
   const proposedOrders: ProposedOrder[] = [];
   const batchId = `${adaptiveSubMode || effectiveMode}_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const closingIds = new Set(positionsToClose.map(p => p.id));
+  const symbolNotional: Record<string, number> = {};
+  for (const p of ctx.openPositions) {
+    if (closingIds.has(p.id)) continue;
+    symbolNotional[p.symbol] = (symbolNotional[p.symbol] || 0) + Number(p.entry_price) * Number(p.size);
+  }
   
   for (const candidate of selected) {
     const { symbol, tick, direction, qualityScore, confidence, reasons, regime } = candidate;
@@ -765,17 +793,23 @@ function runMasterLogicV15(ctx: MasterLogicContext): {
     
     const riskPercent = ctx.baseRiskPercent * sizeMultiplier * ctx.governorSizeMultiplier;
     const slPercent = activeProfile.defaultStopPercent / 100;
-    const slDistance = tick.mid * slPercent;
+    const entryPrice = executionPrice(direction, 'entry', tick, ctx.costModel);
+    const slDistance = entryPrice * slPercent;
     
-    const slPrice = direction === 'long' ? tick.mid - slDistance : tick.mid + slDistance;
-    const size = sizeFromRisk(ctx.equity, riskPercent, tick.mid, slPrice);
+    const slPrice = direction === 'long' ? entryPrice - slDistance : entryPrice + slDistance;
+    const size = sizeFromRisk(ctx.equity, riskPercent, entryPrice, slPrice);
     if (!(size > 0)) continue;
+    const orderNotional = entryPrice * size;
+    if (!canAddSymbolExposure(ctx.equity, symbolNotional[symbol] || 0, orderNotional, ctx.maxPerSymbolExposurePct)) {
+      continue;
+    }
+    symbolNotional[symbol] = (symbolNotional[symbol] || 0) + orderNotional;
     
     const tpPercent = activeProfile.defaultStopPercent * activeProfile.defaultTPMultiplier / 100;
-    const tpDistance = tick.mid * tpPercent;
+    const tpDistance = entryPrice * tpPercent;
     
-    const sl = direction === 'long' ? tick.mid - slDistance : tick.mid + slDistance;
-    const tp = direction === 'long' ? tick.mid + tpDistance : tick.mid - tpDistance;
+    const sl = direction === 'long' ? entryPrice - slDistance : entryPrice + slDistance;
+    const tp = direction === 'long' ? entryPrice + tpDistance : entryPrice - tpDistance;
     
     const mode = (adaptiveSubMode || effectiveMode) as TradingModeKey;
     const reasonStr = `${mode.toUpperCase()}: ${reasons.slice(0, 3).join(', ')} (Q=${qualityScore.toFixed(0)})`;
@@ -784,7 +818,7 @@ function runMasterLogicV15(ctx: MasterLogicContext): {
       symbol,
       side: direction,
       size,
-      entryPrice: tick.mid,
+      entryPrice,
       sl,
       tp,
       mode,
@@ -840,9 +874,9 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { burstRequested, globalClose, takeBurstProfit, takeProfit } = body;
     const today = new Date().toISOString().split('T')[0];
-    // Fees from the normalized risk contract (default 0 bps)
+    // Cost model from the normalized risk contract (applied consistently on entry and all close paths)
     const { data: feeCfg } = await supabase.from('paper_config').select('risk_config').eq('user_id', userId).maybeSingle();
-    const feeBps = normalizeRiskConfig(feeCfg?.risk_config).feeBps;
+    const costModel = normalizeRiskConfig(feeCfg?.risk_config).costModel;
 
     // ================================================================
     // MANUAL ACTION GUARD
@@ -893,8 +927,10 @@ serve(async (req) => {
     if (takeProfit === true) {
       console.log(`[TAKE_PROFIT] ATOMIC CLOSE starting for user ${userId}`);
       
-      const { data: allPositions } = await supabase.from('paper_positions').select('*').eq('user_id', userId);
-      const closedCount = (allPositions || []).length;
+      // Claim/delete first to prevent duplicate paper_trades inserts under concurrent ticks
+      // (true DB-level atomic close RPC is pending until DB access is restored).
+      const { data: claimedPositions } = await supabase.from('paper_positions').delete().eq('user_id', userId).select('*');
+      const closedCount = (claimedPositions || []).length;
       let closePnl = 0;
       
       const { data: existingTrades } = await supabase.from('paper_trades').select('*').eq('user_id', userId).eq('session_date', today);
@@ -905,22 +941,14 @@ serve(async (req) => {
       const currentSessionStatus = config?.session_status || 'running';
       
       if (closedCount > 0) {
-        const tradeRecords = (allPositions || []).map(pos => {
-          const tick = ticks[pos.symbol];
-          const exitPrice = tick ? (pos.side === 'long' ? tick.bid : tick.ask) : Number(pos.entry_price);
-          const pnl = netClosePnl(pos.side, Number(pos.entry_price), exitPrice, Number(pos.size), feeBps).net;
-          closePnl += pnl;
-          return {
-            user_id: userId, symbol: pos.symbol, mode: pos.mode, side: pos.side,
-            size: pos.size, entry_price: pos.entry_price, exit_price: exitPrice,
-            sl: pos.sl, tp: pos.tp, opened_at: pos.opened_at,
-            realized_pnl: pnl, reason: 'take_profit', session_date: today, batch_id: pos.batch_id,
-          };
+        const tradeRecords = (claimedPositions || []).map((pos: any) => {
+          const closed = buildCloseRecord(pos, ticks[pos.symbol], 'take_profit', costModel, userId, today);
+          closePnl += closed.pnl;
+          return closed.record;
         });
         
         await Promise.all([
           supabase.from('paper_trades').insert(tradeRecords),
-          supabase.from('paper_positions').delete().eq('user_id', userId),
           supabase.from('system_logs').insert({
             user_id: userId, level: 'info', source: 'execution',
             message: `TAKE PROFIT: ${closedCount} positions closed. P&L: $${closePnl.toFixed(2)}`,
@@ -951,8 +979,9 @@ serve(async (req) => {
     if (globalClose === true) {
       console.log(`[GLOBAL_CLOSE] ATOMIC CLOSE + STOP starting for user ${userId}`);
       
-      const { data: allPositions } = await supabase.from('paper_positions').select('*').eq('user_id', userId);
-      const closedCount = (allPositions || []).length;
+      // Claim/delete first to prevent duplicate paper_trades inserts under concurrent ticks
+      const { data: claimedPositions } = await supabase.from('paper_positions').delete().eq('user_id', userId).select('*');
+      const closedCount = (claimedPositions || []).length;
       let closePnl = 0;
       
       const { data: existingTrades } = await supabase.from('paper_trades').select('*').eq('user_id', userId).eq('session_date', today);
@@ -960,22 +989,14 @@ serve(async (req) => {
       
       
       if (closedCount > 0) {
-        const tradeRecords = (allPositions || []).map(pos => {
-          const tick = ticks[pos.symbol];
-          const exitPrice = tick ? (pos.side === 'long' ? tick.bid : tick.ask) : Number(pos.entry_price);
-          const pnl = netClosePnl(pos.side, Number(pos.entry_price), exitPrice, Number(pos.size), feeBps).net;
-          closePnl += pnl;
-          return {
-            user_id: userId, symbol: pos.symbol, mode: pos.mode, side: pos.side,
-            size: pos.size, entry_price: pos.entry_price, exit_price: exitPrice,
-            sl: pos.sl, tp: pos.tp, opened_at: pos.opened_at,
-            realized_pnl: pnl, reason: 'global_close', session_date: today, batch_id: pos.batch_id,
-          };
+        const tradeRecords = (claimedPositions || []).map((pos: any) => {
+          const closed = buildCloseRecord(pos, ticks[pos.symbol], 'global_close', costModel, userId, today);
+          closePnl += closed.pnl;
+          return closed.record;
         });
         
         await Promise.all([
           supabase.from('paper_trades').insert(tradeRecords),
-          supabase.from('paper_positions').delete().eq('user_id', userId),
           supabase.from('paper_config').update({ session_status: 'idle', is_running: false, burst_requested: false }).eq('user_id', userId),
           supabase.from('system_logs').insert({
             user_id: userId, level: 'info', source: 'execution',
@@ -1132,26 +1153,16 @@ serve(async (req) => {
 
     // Handle take burst profit
     if (takeBurstProfit) {
-      const { data: burstPositions } = await supabase.from('paper_positions').select('*').eq('user_id', userId).eq('mode', 'burst');
-      const burstCount = (burstPositions || []).length;
+      const { data: claimedBurst } = await supabase.from('paper_positions').delete().eq('user_id', userId).eq('mode', 'burst').select('*');
+      const burstCount = (claimedBurst || []).length;
       
       if (burstCount > 0) {
-        const burstIds = (burstPositions || []).map(p => p.id);
-        const tradeRecords = (burstPositions || []).map(pos => {
-          const tick = ticks[pos.symbol];
-          const exitPrice = tick ? (pos.side === 'long' ? tick.bid : tick.ask) : Number(pos.entry_price);
-          const pnl = netClosePnl(pos.side, Number(pos.entry_price), exitPrice, Number(pos.size), feeBps).net;
-          return {
-            user_id: userId, symbol: pos.symbol, mode: pos.mode, side: pos.side,
-            size: pos.size, entry_price: pos.entry_price, exit_price: exitPrice,
-            sl: pos.sl, tp: pos.tp, opened_at: pos.opened_at,
-            realized_pnl: pnl, reason: 'take_burst_profit', session_date: today, batch_id: pos.batch_id,
-          };
-        });
+        const tradeRecords = (claimedBurst || []).map((pos: any) =>
+          buildCloseRecord(pos, ticks[pos.symbol], 'take_burst_profit', costModel, userId, today).record
+        );
         
         await Promise.all([
           supabase.from('paper_trades').insert(tradeRecords),
-          supabase.from('paper_positions').delete().in('id', burstIds),
           supabase.from('system_logs').insert({
             user_id: userId, level: 'info', source: 'burst',
             message: `BURST: Take profit - ${burstCount} burst positions closed`,
@@ -1320,6 +1331,8 @@ serve(async (req) => {
         equity: liveEquity,
         baseRiskPercent: risk.perTradeRiskPct,
         maxOpenTrades: risk.maxOpenTrades,
+        maxPerSymbolExposurePct: risk.maxPerSymbolExposurePct,
+        costModel: risk.costModel,
         allowEntries,
         governorSizeMultiplier: gov.sizeMultiplier,
         openPositions: (finalPositions || []) as Position[],
@@ -1338,20 +1351,14 @@ serve(async (req) => {
 
       // Process position closures from Master Logic
       for (const closeOrder of result.positionsToClose) {
-        const pos = (finalPositions || []).find((p: any) => p.id === closeOrder.id);
+        // Claim/delete first so concurrent ticks cannot double-book the same close
+        const { data: claimed } = await supabase.from('paper_positions').delete().eq('id', closeOrder.id).eq('user_id', userId).select('*').maybeSingle();
+        const pos = claimed;
         if (!pos) continue;
         
-        const tick = ticks[pos.symbol];
-        const exitPrice = tick ? (pos.side === 'long' ? tick.bid : tick.ask) : Number(pos.entry_price);
-        const pnl = netClosePnl(pos.side, Number(pos.entry_price), exitPrice, Number(pos.size), feeBps).net;
+        const { record, pnl } = buildCloseRecord(pos, ticks[pos.symbol], closeOrder.reason, risk.costModel, userId, today);
         
-        await supabase.from('paper_trades').insert({
-          user_id: userId, symbol: pos.symbol, mode: pos.mode, side: pos.side,
-          size: pos.size, entry_price: pos.entry_price, exit_price: exitPrice,
-          sl: pos.sl, tp: pos.tp, opened_at: pos.opened_at,
-          realized_pnl: pnl, reason: closeOrder.reason, session_date: today, batch_id: pos.batch_id,
-        });
-        await supabase.from('paper_positions').delete().eq('id', pos.id).eq('user_id', userId);
+        await supabase.from('paper_trades').insert(record);
         
         await supabase.from('system_logs').insert({
           user_id: userId,

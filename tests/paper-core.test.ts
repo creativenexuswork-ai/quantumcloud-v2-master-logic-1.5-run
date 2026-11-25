@@ -3,21 +3,44 @@ import { readFileSync } from 'fs';
 import {
   normalizeModeKey, normalizeEnabledModes, normalizeRiskConfig, resolveAccountEquity,
   decideDirection, evaluateExit, governor, sizeFromRisk, netClosePnl, positionRisk,
+  executionPrice, canAddSymbolExposure,
 } from '../supabase/functions/_shared/paper-core';
 
 const profile = { defaultStopPercent: 0.4, defaultTPMultiplier: 1.5, trailingStopActivation: 0.4, trailingStopDistance: 0.2, cutLoserThreshold: -5, maxHoldMinutes: 60 };
 const now = Date.parse('2026-01-01T00:10:00Z');
 const opened = '2026-01-01T00:00:00Z';
+const verifiedAcct = { id: 'a', equity: 5000, opening_capital_set_at: '2026-01-01T00:00:00Z' };
+const configuredCost = { takerFeeBps: 5, slippageBps: 2, fillAssumption: 'bid_ask' as const };
 
 describe('equity contract', () => {
-  it('compounds: opening + all realized + unrealized', () => {
-    const r = resolveAccountEquity([{ id: 'a', equity: 5000 }], [100, -40, 25], [10]);
+  it('compounds: verified opening + account-scoped realized + unrealized', () => {
+    const r = resolveAccountEquity(
+      [verifiedAcct],
+      [{ realized_pnl: 100, account_id: 'a' }, { realized_pnl: -40, account_id: 'a' }, { realized_pnl: 25, account_id: 'a' }],
+      [10],
+    );
     expect(r.ok && r.balance).toBe(5085);
     expect(r.ok && r.equity).toBe(5095);
   });
   it('never invents 10000 when uninitialized', () => {
-    const r = resolveAccountEquity([{ id: 'a', equity: null }], [100], []);
+    const r = resolveAccountEquity([{ id: 'a', equity: null, opening_capital_set_at: '2026-01-01T00:00:00Z' }], [], []);
     expect(r).toMatchObject({ ok: false, code: 'EQUITY_UNAVAILABLE', reason: 'ACCOUNT_NOT_INITIALIZED' });
+  });
+  it('blocks when opening capital baseline is not verified', () => {
+    const r = resolveAccountEquity([{ id: 'a', equity: 5000 }], [], []);
+    expect(r).toMatchObject({ ok: false, code: 'EQUITY_UNAVAILABLE', reason: 'BASELINE_UNVERIFIED' });
+  });
+  it('blocks on unscoped historical trades missing account_id', () => {
+    const r = resolveAccountEquity([verifiedAcct], [{ realized_pnl: 100, account_id: null }], []);
+    expect(r).toMatchObject({ ok: false, code: 'EQUITY_UNAVAILABLE', reason: 'UNSCOPED_TRADE_HISTORY' });
+  });
+  it('isolates account equity from other accounts trades', () => {
+    const r = resolveAccountEquity(
+      [verifiedAcct],
+      [{ realized_pnl: 100, account_id: 'a' }, { realized_pnl: -999, account_id: 'other-account' }],
+      [],
+    );
+    expect(r.ok && r.balance).toBe(5100);
   });
   it('no active paper account -> unavailable', () => {
     expect(resolveAccountEquity([], [], [])).toMatchObject({ ok: false, reason: 'NO_ACTIVE_PAPER_ACCOUNT' });
@@ -41,11 +64,22 @@ describe('mode keys', () => {
 });
 
 describe('risk config wiring', () => {
+  it('UI key maxPerTradeRiskPercent reaches the engine', () => {
+    const cfg = normalizeRiskConfig({ maxPerTradeRiskPercent: 0.5 });
+    expect(cfg.perTradeRiskPct).toBe(0.5);
+    expect(cfg.sources.perTradeRiskPct).toBe('maxPerTradeRiskPercent');
+  });
   it('UI key maxPerTradeRisk reaches the engine', () => {
     expect(normalizeRiskConfig({ maxPerTradeRisk: 0.5, riskPerTrade: 2 }).perTradeRiskPct).toBe(0.5);
   });
   it('UI maxDailyDrawdown reaches the governor', () => {
     expect(normalizeRiskConfig({ maxDailyDrawdown: 3 }).maxDailyDrawdownPct).toBe(3);
+  });
+  it('maxPerSymbolExposure is percent of equity, not position count', () => {
+    const cfg = normalizeRiskConfig({ maxPerSymbolExposure: 30 });
+    expect(cfg.maxPerSymbolExposurePct).toBe(30);
+    expect(canAddSymbolExposure(10000, 2000, 1000, cfg.maxPerSymbolExposurePct)).toBe(true);  // 30%
+    expect(canAddSymbolExposure(10000, 2000, 1001, cfg.maxPerSymbolExposurePct)).toBe(false); // 30.01%
   });
   it('sizing risks exactly perTradeRisk % of current equity', () => {
     const size = sizeFromRisk(12000, 1, 100, 99);
@@ -53,6 +87,25 @@ describe('risk config wiring', () => {
   });
   it('compounding: larger equity -> larger size', () => {
     expect(sizeFromRisk(11000, 1, 100, 99)).toBeGreaterThan(sizeFromRisk(10000, 1, 100, 99));
+  });
+});
+
+describe('cost model', () => {
+  it('unconfigured cost model blocks entries in governor', () => {
+    const risk = normalizeRiskConfig({ maxDailyDrawdown: 5 });
+    expect(risk.costModel.configured).toBe(false);
+    const g = governor({ equity: 10000, dayStartEquity: 10000, openRiskAmount: 0, openCount: 0, risk });
+    expect(g.allowEntries).toBe(false);
+    expect(g.reasons).toContain('COST_MODEL_UNCONFIGURED');
+  });
+  it('applies bid/ask spread + slippage symmetrically on entry and exit', () => {
+    const tick = { bid: 99.9, ask: 100.1, mid: 100 };
+    const entry = executionPrice('long', 'entry', tick, { fillAssumption: 'bid_ask', slippageBps: 5 });
+    const exit = executionPrice('long', 'exit', tick, { fillAssumption: 'bid_ask', slippageBps: 5 });
+    expect(entry).toBeCloseTo(100.1 * 1.0005, 8);
+    expect(exit).toBeCloseTo(99.9 * 0.9995, 8);
+    const pnl = netClosePnl('long', entry, exit, 1, { takerFeeBps: 5 });
+    expect(pnl.net).toBeLessThan(0); // instant round-trip loses spread + slippage + fees
   });
 });
 
@@ -89,7 +142,7 @@ describe('stop / TP lifecycle', () => {
 });
 
 describe('governor (no halt flag)', () => {
-  const risk = normalizeRiskConfig({ maxDailyDrawdown: 4, maxOpenTrades: 5, maxConcurrentRiskPercent: 10 });
+  const risk = normalizeRiskConfig({ maxDailyDrawdown: 4, maxOpenTrades: 5, maxConcurrentRiskPercent: 10, costModel: configuredCost });
   it('soft drawdown halves size', () => {
     const g = governor({ equity: 9750, dayStartEquity: 10000, openRiskAmount: 0, openCount: 0, risk });
     expect(g).toMatchObject({ allowEntries: true, sizeMultiplier: 0.5 });
@@ -135,4 +188,11 @@ describe('regression guards', () => {
   });
   it('no random direction fallback', () => expect(tick).not.toMatch(/Math\.random\(\) > 0\.5 \? 'long'/));
   it('daily halt stays removed', () => expect(tick + stats).not.toMatch(/trading_halted_for_day/));
+  it('entry fill uses executionPrice, not raw tick.mid', () => {
+    expect(tick).toMatch(/executionPrice\(direction,\s*'entry'/);
+    expect(tick).not.toMatch(/entryPrice:\s*tick\.mid/);
+  });
+  it('all close paths share buildCloseRecord', () => {
+    expect((tick.match(/buildCloseRecord\(/g) || []).length).toBeGreaterThanOrEqual(5); // 1 def + 4 call sites
+  });
 });

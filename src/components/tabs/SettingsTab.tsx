@@ -40,8 +40,10 @@ export function SettingsTab() {
 
   const handleSave = async () => {
     try {
+      const existingRisk = (paperData?.config?.risk_config ?? {}) as Record<string, unknown>;
       await updateConfig.mutateAsync({
         risk_config: {
+          ...existingRisk,
           maxDailyLossPercent: formData.maxDailyLoss,
           maxConcurrentRiskPercent: formData.maxConcurrentRisk,
         },

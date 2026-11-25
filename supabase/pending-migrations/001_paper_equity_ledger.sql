@@ -15,7 +15,13 @@ COMMENT ON COLUMN public.paper_trades.realized_pnl IS 'Net realized P&L (after f
 
 -- 2) Opening capital must be explicit; no implicit default
 ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS opening_capital_set_at timestamptz;
+ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS baseline_verified_at timestamptz;
+ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS baseline_verification_note text;
 COMMENT ON COLUMN public.accounts.equity IS 'Opening capital (explicitly set). Live equity = opening + ledger/realized + unrealized. Never written by the engine.';
+
+-- 4) Atomic close RPC (PENDING — cannot be created or tested until database access is restored):
+--    CREATE OR REPLACE FUNCTION public.close_paper_position(...) should delete from paper_positions,
+--    insert into paper_trades, and append to account_ledger inside a single transaction.
 
 -- 3) Append-only ledger
 CREATE TABLE IF NOT EXISTS public.account_ledger (

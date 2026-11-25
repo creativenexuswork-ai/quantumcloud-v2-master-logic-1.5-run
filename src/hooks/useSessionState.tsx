@@ -186,7 +186,7 @@ export function useFullSessionState() {
   const tradesToday = paperData?.stats?.tradesToday || 0;
   const winRate = paperData?.stats?.winRate || 0;
   const equity = paperData?.stats?.equity ?? 0;
-  const equityStatus = paperData?.stats?.equityStatus ?? 'OK';
+  const equityStatus = paperData?.stats?.equityStatus ?? 'EQUITY_UNAVAILABLE';
   const equityReason = paperData?.stats?.equityReason ?? null;
   
   // Helper to set running state (backward compatible)
@@ -217,11 +217,13 @@ export function useFullSessionState() {
     debounce(async (settings: RiskSettings) => {
       console.log(`[RISK] config updated: perTradeRisk=${settings.maxPerTradeRisk}% maxDD=${settings.maxDailyDrawdown}%`);
       
+      const existingRisk = (paperData?.config?.risk_config ?? {}) as Record<string, unknown>;
       updateConfig.mutate({
         risk_config: {
+          ...existingRisk,
           maxDailyLossPercent: settings.maxDailyDrawdown,
           maxConcurrentRiskPercent: 10, // Fixed for paper trading
-          maxOpenTrades: 20,
+          maxOpenTrades: tradingState.modeConfig.maxConcurrentPositions,
           maxPerSymbolExposure: 30,
           maxPerTradeRiskPercent: settings.maxPerTradeRisk,
         },
@@ -232,7 +234,7 @@ export function useFullSessionState() {
         },
       });
     }, 500),
-    [updateConfig, tradingState.modeConfig.burstTradesPerRun]
+    [updateConfig, paperData?.config?.risk_config, tradingState.modeConfig.burstTradesPerRun, tradingState.modeConfig.maxConcurrentPositions]
   );
   
   const updateRiskSettings = useCallback((settings: Partial<RiskSettings>) => {
@@ -246,6 +248,7 @@ export function useFullSessionState() {
     debounce(async (config: ModeConfig, riskSettings: RiskSettings) => {
       console.log(`[SESSION] modeConfig updated: burstSize=${config.burstTradesPerRun} maxConcurrent=${config.maxConcurrentPositions}`);
       
+      const existingRisk = (paperData?.config?.risk_config ?? {}) as Record<string, unknown>;
       updateConfig.mutate({
         burst_config: {
           size: config.burstTradesPerRun,
@@ -253,14 +256,16 @@ export function useFullSessionState() {
           riskPerBurstPercent: 2,
         },
         risk_config: {
+          ...existingRisk,
           maxDailyLossPercent: riskSettings.maxDailyDrawdown,
           maxConcurrentRiskPercent: 10,
           maxOpenTrades: config.maxConcurrentPositions,
-          maxPerSymbolExposure: 50,
+          maxPerSymbolExposure: 30,
+          maxPerTradeRiskPercent: riskSettings.maxPerTradeRisk,
         },
       });
     }, 500),
-    [updateConfig]
+    [updateConfig, paperData?.config?.risk_config]
   );
   
   const updateModeConfig = useCallback((config: Partial<ModeConfig>) => {

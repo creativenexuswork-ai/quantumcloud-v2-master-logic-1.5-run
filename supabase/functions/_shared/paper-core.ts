@@ -32,13 +32,27 @@ export function normalizeEnabledModes(raw: unknown): { modes: ModeKey[]; unknown
 }
 
 // ---------------- Risk config contract ----------------
+export type FillAssumption = 'bid_ask' | 'mid_plus_slippage';
+
+export interface CostModelConfig {
+  makerFeeBps: number | null;
+  takerFeeBps: number | null;
+  slippageBps: number | null;
+  fillAssumption: FillAssumption;
+  isEstimate: boolean;
+  configured: boolean;
+  sources: Record<string, string>;
+}
+
 export interface RiskConfig {
   perTradeRiskPct: number;
   maxDailyDrawdownPct: number;
   maxOpenTrades: number;
   maxConcurrentRiskPct: number;
+  maxPerSymbolExposurePct: number;
   maxPerSymbolOpen: number;
   feeBps: number;
+  costModel: CostModelConfig;
   sources: Record<string, string>;
 }
 
@@ -51,45 +65,110 @@ function pick(raw: Record<string, unknown>, keys: string[], fallback: number, so
   return fallback;
 }
 
+function pickNullable(raw: Record<string, unknown>, keys: string[], sources: Record<string, string>, name: string): number | null {
+  for (const k of keys) {
+    if (raw[k] !== undefined && raw[k] !== null && raw[k] !== '') {
+      const v = Number(raw[k]);
+      if (Number.isFinite(v)) { sources[name] = k; return v; }
+    }
+  }
+  sources[name] = 'unconfigured';
+  return null;
+}
+
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+export function normalizeCostModel(input: unknown): CostModelConfig {
+  const raw = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  const nested = (raw.costModel && typeof raw.costModel === 'object' ? raw.costModel : {}) as Record<string, unknown>;
+  const merged = { ...raw, ...nested };
+  const sources: Record<string, string> = {};
+  const rawMaker = pickNullable(merged, ['makerFeeBps'], sources, 'makerFeeBps');
+  const rawTaker = pickNullable(merged, ['takerFeeBps', 'feeBps'], sources, 'takerFeeBps');
+  const rawSlip = pickNullable(merged, ['slippageBps'], sources, 'slippageBps');
+  const makerFeeBps = rawMaker === null ? null : clamp(rawMaker, 0, 500);
+  const takerFeeBps = rawTaker === null ? null : clamp(rawTaker, 0, 500);
+  const slippageBps = rawSlip === null ? null : clamp(rawSlip, 0, 500);
+  const fillAssumption: FillAssumption = merged.fillAssumption === 'mid_plus_slippage' ? 'mid_plus_slippage' : 'bid_ask';
+  const isEstimate = merged.isEstimate !== false;
+  const configured = takerFeeBps !== null && slippageBps !== null;
+  return { makerFeeBps, takerFeeBps, slippageBps, fillAssumption, isEstimate, configured, sources };
+}
 
 /** Accepts canonical keys first, then every legacy key the UI or old rows used. */
 export function normalizeRiskConfig(input: unknown): RiskConfig {
   const raw = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
   const sources: Record<string, string> = {};
+  const costModel = normalizeCostModel(raw);
   return {
-    perTradeRiskPct: clamp(pick(raw, ['perTradeRiskPct', 'maxPerTradeRisk', 'riskPerTrade'], 2, sources, 'perTradeRiskPct'), 0.01, 10),
+    perTradeRiskPct: clamp(pick(raw, ['perTradeRiskPct', 'maxPerTradeRiskPercent', 'maxPerTradeRisk', 'riskPerTrade'], 2, sources, 'perTradeRiskPct'), 0.01, 10),
     maxDailyDrawdownPct: clamp(pick(raw, ['maxDailyDrawdownPct', 'maxDailyDrawdown', 'maxDailyLossPercent'], 5, sources, 'maxDailyDrawdownPct'), 0.1, 100),
     maxOpenTrades: Math.round(clamp(pick(raw, ['maxOpenTrades', 'maxConcurrentPositions'], 20, sources, 'maxOpenTrades'), 1, 200)),
     maxConcurrentRiskPct: clamp(pick(raw, ['maxConcurrentRiskPct', 'maxConcurrentRiskPercent'], 10, sources, 'maxConcurrentRiskPct'), 0.1, 100),
-    maxPerSymbolOpen: Math.round(clamp(pick(raw, ['maxPerSymbolOpen', 'maxPerSymbolExposure'], 10, sources, 'maxPerSymbolOpen'), 1, 100)),
-    feeBps: clamp(pick(raw, ['feeBps'], 0, sources, 'feeBps'), 0, 100),
+    maxPerSymbolExposurePct: clamp(pick(raw, ['maxPerSymbolExposurePct', 'maxPerSymbolExposure'], 30, sources, 'maxPerSymbolExposurePct'), 1, 100),
+    maxPerSymbolOpen: Math.round(clamp(pick(raw, ['maxPerSymbolOpen'], 10, sources, 'maxPerSymbolOpen'), 1, 100)),
+    feeBps: costModel.takerFeeBps ?? 0,
+    costModel,
     sources,
   };
 }
 
 // ---------------- Account equity contract ----------------
-export interface AccountRow { id: string; equity: number | null; type?: string; is_active?: boolean | null }
+export interface AccountRow {
+  id: string;
+  equity: number | null;
+  type?: string;
+  is_active?: boolean | null;
+  opening_capital_set_at?: string | null;
+  baseline_verified_at?: string | null;
+}
+
+export interface RealizedTradeRef {
+  realized_pnl: number | string | null | undefined;
+  account_id?: string | null;
+}
+
+export type EquityUnavailableReason =
+  | 'NO_ACTIVE_PAPER_ACCOUNT'
+  | 'ACCOUNT_AMBIGUOUS'
+  | 'ACCOUNT_NOT_INITIALIZED'
+  | 'BASELINE_UNVERIFIED'
+  | 'UNSCOPED_TRADE_HISTORY'
+  | 'LOAD_FAILED';
 
 export type EquityResult =
   | { ok: true; accountId: string; openingCapital: number; realizedAllTime: number; balance: number; unrealized: number; equity: number }
-  | { ok: false; code: 'EQUITY_UNAVAILABLE'; reason: 'NO_ACTIVE_PAPER_ACCOUNT' | 'ACCOUNT_AMBIGUOUS' | 'ACCOUNT_NOT_INITIALIZED' | 'LOAD_FAILED'; detail?: string };
+  | { ok: false; code: 'EQUITY_UNAVAILABLE'; reason: EquityUnavailableReason; detail?: string };
 
 /**
- * Canonical equity (pre-ledger): opening capital is accounts.equity, which no code
- * path writes during trading, so it is the explicitly-set starting capital.
- * balance = opening + all realized net P&L (compounds across days; daily snapshots
- * are never used as a base, so nothing is counted twice). equity = balance + unrealized.
- * Never invents a balance: missing/zero/ambiguous -> EQUITY_UNAVAILABLE.
+ * Canonical equity (pre-ledger): requires an explicitly verified opening-capital
+ * baseline (opening_capital_set_at or baseline_verified_at) AND account-scoped
+ * trade history (every realized trade must carry account_id). Never infers
+ * accounts.equity as opening capital without verification and never mixes
+ * unscoped user-wide historical trades into an active account.
  */
-export function resolveAccountEquity(accounts: AccountRow[] | null | undefined, realizedPnls: number[], unrealizedPnls: number[]): EquityResult {
+export function resolveAccountEquity(
+  accounts: AccountRow[] | null | undefined,
+  realizedTrades: RealizedTradeRef[] | null | undefined,
+  unrealizedPnls: number[],
+): EquityResult {
   const list = accounts ?? [];
   if (list.length === 0) return { ok: false, code: 'EQUITY_UNAVAILABLE', reason: 'NO_ACTIVE_PAPER_ACCOUNT' };
   if (list.length > 1) return { ok: false, code: 'EQUITY_UNAVAILABLE', reason: 'ACCOUNT_AMBIGUOUS', detail: `${list.length} active paper accounts` };
   const acct = list[0];
   const opening = acct.equity === null || acct.equity === undefined ? NaN : Number(acct.equity);
   if (!Number.isFinite(opening) || opening <= 0) return { ok: false, code: 'EQUITY_UNAVAILABLE', reason: 'ACCOUNT_NOT_INITIALIZED' };
-  const realized = sum(realizedPnls);
+  const verifiedAt = acct.baseline_verified_at || acct.opening_capital_set_at;
+  if (!verifiedAt || typeof verifiedAt !== 'string' || verifiedAt.trim() === '') {
+    return { ok: false, code: 'EQUITY_UNAVAILABLE', reason: 'BASELINE_UNVERIFIED', detail: 'Opening capital baseline has not been verified' };
+  }
+  const trades = realizedTrades ?? [];
+  const unscoped = trades.filter(t => !t.account_id || typeof t.account_id !== 'string' || t.account_id.trim() === '');
+  if (unscoped.length > 0) {
+    return { ok: false, code: 'EQUITY_UNAVAILABLE', reason: 'UNSCOPED_TRADE_HISTORY', detail: `${unscoped.length} trade(s) missing account_id` };
+  }
+  const accountTrades = trades.filter(t => t.account_id === acct.id);
+  const realized = sum(accountTrades.map(t => t.realized_pnl));
   const unrealized = sum(unrealizedPnls);
   const balance = opening + realized;
   return { ok: true, accountId: acct.id, openingCapital: opening, realizedAllTime: realized, balance, unrealized, equity: balance + unrealized };
@@ -102,12 +181,29 @@ export function sum(values: Array<number | string | null | undefined>): number {
 }
 
 // ---------------- P&L ----------------
+export interface QuoteTick { bid: number; ask: number; mid: number }
+
+/** Consistent entry/exit fill pricing with spread and slippage. */
+export function executionPrice(side: Side, action: 'entry' | 'exit', tick: QuoteTick, cost: Pick<CostModelConfig, 'fillAssumption' | 'slippageBps'>): number {
+  const slip = (cost.slippageBps ?? 0) / 10000;
+  const isBuy = (side === 'long' && action === 'entry') || (side === 'short' && action === 'exit');
+  const base = cost.fillAssumption === 'mid_plus_slippage' ? tick.mid : (isBuy ? tick.ask : tick.bid);
+  return isBuy ? base * (1 + slip) : base * (1 - slip);
+}
+
 export function grossPnl(side: Side, entry: number, exit: number, size: number): number {
   return (side === 'long' ? exit - entry : entry - exit) * size;
 }
 
 /** Net realized P&L after round-trip fees (feeBps per side on notional). */
-export function netClosePnl(side: Side, entry: number, exit: number, size: number, feeBps = 0): { gross: number; fees: number; net: number } {
+export function netClosePnl(
+  side: Side,
+  entry: number,
+  exit: number,
+  size: number,
+  costOrFeeBps: number | Pick<CostModelConfig, 'takerFeeBps'> = 0,
+): { gross: number; fees: number; net: number } {
+  const feeBps = typeof costOrFeeBps === 'number' ? costOrFeeBps : (costOrFeeBps.takerFeeBps ?? 0);
   const gross = grossPnl(side, entry, exit, size);
   const fees = ((entry + exit) * size * feeBps) / 10000;
   return { gross, fees, net: gross - fees };
@@ -191,11 +287,22 @@ export function governor(g: GovernorInput): GovernorDecision {
   let allow = true;
   let mult = 1;
   if (!(g.equity > 0)) { allow = false; reasons.push('NO_EQUITY'); }
+  if (!g.risk.costModel.configured) { allow = false; reasons.push('COST_MODEL_UNCONFIGURED'); }
   if (dayDrawdownPct >= g.risk.maxDailyDrawdownPct) { allow = false; reasons.push('DRAWDOWN_HARD'); }
   else if (dayDrawdownPct >= g.risk.maxDailyDrawdownPct * 0.5) { mult = 0.5; reasons.push('DRAWDOWN_SOFT'); }
   if (g.openCount >= g.risk.maxOpenTrades) { allow = false; reasons.push('MAX_OPEN_TRADES'); }
   if (openRiskPct >= g.risk.maxConcurrentRiskPct) { allow = false; reasons.push('MAX_CONCURRENT_RISK'); }
   return { allowEntries: allow, sizeMultiplier: allow ? mult : 0, reasons, dayDrawdownPct, openRiskPct };
+}
+
+export function canAddSymbolExposure(
+  equity: number,
+  currentSymbolNotional: number,
+  newOrderNotional: number,
+  maxPerSymbolExposurePct: number,
+): boolean {
+  if (!(equity > 0) || !(maxPerSymbolExposurePct > 0)) return false;
+  return ((currentSymbolNotional + newOrderNotional) / equity) * 100 <= maxPerSymbolExposurePct;
 }
 
 export function positionRisk(p: { entry_price: number; sl: number | null; size: number }): number {
