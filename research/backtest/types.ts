@@ -28,6 +28,10 @@ export interface BacktestConfig {
   trailingDistancePct?: number;
   maxHoldBars?: number;
   strategyParams?: Record<string, number>;
+  /** Intrabar stop/TP ordering when both SL and TP fall inside [low, high]. Default: conservative_sl_first. */
+  intrabarAssumption?: 'conservative_sl_first' | 'optimistic_tp_first';
+  /** Execution latency in bars after signal bar close (default 1 = next bar open; 2 = +1 bar delay). */
+  latencyBars?: number;
 }
 
 export interface StrategySignal {

@@ -1,3 +1,9 @@
+import {
+  MASTER_MODE_PROFILES,
+  classifyRegimeFromPrices,
+  scoreMasterCandidate,
+  sessionQualityFromUtcHour,
+} from '../../supabase/functions/_shared/master-logic-core';
 import type { BacktestMode, OhlcvBar, StrategyAdapter, StrategySignal } from './types';
 
 function sma(bars: readonly OhlcvBar[], period: number): number {
@@ -5,7 +11,7 @@ function sma(bars: readonly OhlcvBar[], period: number): number {
   return slice.reduce((s, b) => s + b.close, 0) / slice.length;
 }
 
-/** Trend adapter: fast/slow SMA crossover + momentum confirmation. Sees ONLY history[0..i]. */
+/** PROTOTYPE ONLY (not QuantumCloud Master Logic): simple fast/slow SMA crossover. */
 export const trendAdapter: StrategyAdapter = (history, params): StrategySignal | null => {
   const fast = Math.max(2, Math.round(params?.fastPeriod ?? 5));
   const slow = Math.max(fast + 1, Math.round(params?.slowPeriod ?? 15));
@@ -19,7 +25,7 @@ export const trendAdapter: StrategyAdapter = (history, params): StrategySignal |
   return null;
 };
 
-/** Scalper adapter: short-term mean-reversion off local SMA band. Sees ONLY history[0..i]. */
+/** PROTOTYPE ONLY (not QuantumCloud Master Logic): simple SMA band mean-reversion. */
 export const scalperAdapter: StrategyAdapter = (history, params): StrategySignal | null => {
   const period = Math.max(3, Math.round(params?.period ?? 10));
   if (history.length < period) return null;
@@ -32,7 +38,7 @@ export const scalperAdapter: StrategyAdapter = (history, params): StrategySignal
   return null;
 };
 
-/** Burst adapter: breakout above/below N-bar range. Sees ONLY history[0..i]. */
+/** PROTOTYPE ONLY (not QuantumCloud Master Logic): simple N-bar range breakout. */
 export const burstAdapter: StrategyAdapter = (history, params): StrategySignal | null => {
   const lookback = Math.max(3, Math.round(params?.lookback ?? 8));
   if (history.length < lookback + 1) return null;
@@ -45,8 +51,46 @@ export const burstAdapter: StrategyAdapter = (history, params): StrategySignal |
   return null;
 };
 
-export const STRATEGY_ADAPTERS: Record<BacktestMode, StrategyAdapter> = {
+export const PROTOTYPE_ADAPTERS: Record<BacktestMode, StrategyAdapter> = {
   burst: burstAdapter,
   scalper: scalperAdapter,
   trend: trendAdapter,
 };
+
+/**
+ * FAITHFUL MASTER LOGIC v1.5 ADAPTERS — shares pure decision core with paper-tick.
+ *
+ * Transparent proxy / exclusion boundaries for historical OHLCV replay:
+ *  - Price history: bar close series proxies the live 1s tick mid-price stream (window <= 50).
+ *  - Session quality: derived from bar UTC hour (exact match to getSessionInfo).
+ *  - Thermostat: defaults to neutral (aggression=0.5, tag='NORMAL') unless overridden via params.
+ *  - Live bid/ask orderbook & live flow: unavailable in OHLCV -> proxied by BacktestCostModel.
+ */
+function buildFaithfulAdapter(mode: BacktestMode): StrategyAdapter {
+  return (history, params): StrategySignal | null => {
+    if (history.length < 10) return null;
+    const profile = MASTER_MODE_PROFILES[mode];
+    const prices = history.slice(-50).map(b => b.close);
+    const lastBar = history[history.length - 1];
+    const regime = classifyRegimeFromPrices('RESEARCH', prices);
+    const sessionQuality = sessionQualityFromUtcHour(new Date(lastBar.ts).getUTCHours());
+    const aggression = params?.thermostatAggression ?? 0.5;
+    const decision = scoreMasterCandidate(profile, regime, sessionQuality, aggression, 'NORMAL', 0);
+    if (!decision.passed || !decision.side) return null;
+    return {
+      side: decision.side,
+      stopPct: params?.stopPct ?? profile.defaultStopPercent,
+      tpMultiplier: params?.tpMultiplier ?? profile.defaultTPMultiplier,
+      reason: `master_v15_${mode}:${decision.reasons.join(',')}`,
+    };
+  };
+}
+
+export const FAITHFUL_MASTER_LOGIC_ADAPTERS: Record<BacktestMode, StrategyAdapter> = {
+  burst: buildFaithfulAdapter('burst'),
+  scalper: buildFaithfulAdapter('scalper'),
+  trend: buildFaithfulAdapter('trend'),
+};
+
+/** Default adapters point to the faithful Master Logic v1.5 implementation. */
+export const STRATEGY_ADAPTERS: Record<BacktestMode, StrategyAdapter> = FAITHFUL_MASTER_LOGIC_ADAPTERS;

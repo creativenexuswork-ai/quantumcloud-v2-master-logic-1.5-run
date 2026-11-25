@@ -38,10 +38,13 @@ export function runBacktest(
   adapterOverride?: StrategyAdapter,
 ): BacktestResult {
   const adapter = adapterOverride ?? STRATEGY_ADAPTERS[config.mode];
+  const intrabarAssumption = config.intrabarAssumption ?? 'conservative_sl_first';
+  const latencyBars = config.latencyBars ?? 1;
+  if (!Number.isInteger(latencyBars) || latencyBars < 1) throw new Error('latencyBars must be an integer >= 1');
   let balance = config.openingCapital;
   let nextTradeId = 1;
   let openPositions: OpenPos[] = [];
-  let pendingSignal: { signal: StrategySignal; signalBarIndex: number } | null = null;
+  const pendingQueue: Array<{ signal: StrategySignal; signalBarIndex: number; executeAtBar: number }> = [];
   const trades: BacktestTrade[] = [];
   const equityCurve: EquityPoint[] = [];
   let totalNotionalTraded = 0;
@@ -62,38 +65,47 @@ export function runBacktest(
   for (let i = 0; i < bars.length; i++) {
     const bar = bars[i];
 
-    // 1) Execute pending signal from bar i-1 at bar i open (never earlier than next bar)
-    if (pendingSignal && openPositions.length < config.maxConcurrentPositions) {
-      const { signal, signalBarIndex } = pendingSignal;
-      const entryPrice = fillPrice(signal.side, 'entry', bar.open, config.costModel);
-      const stopDist = entryPrice * (signal.stopPct / 100);
-      const sl = signal.side === 'long' ? entryPrice - stopDist : entryPrice + stopDist;
-      const tp = signal.side === 'long'
-        ? entryPrice + stopDist * signal.tpMultiplier
-        : entryPrice - stopDist * signal.tpMultiplier;
-      const size = sizeFromRisk(balance, config.perTradeRiskPct, entryPrice, sl);
-      if (size > 0) {
-        totalNotionalTraded += entryPrice * size;
-        openPositions.push({
-          id: nextTradeId++, side: signal.side, signalBarIndex, entryBarIndex: i,
-          entryTs: bar.ts, entryPrice, size, sl, tp, slInProfit: false,
-        });
+    // 1) Execute pending signals scheduled for bar i open (never earlier than bar i + latencyBars)
+    while (pendingQueue.length > 0 && pendingQueue[0].executeAtBar <= i) {
+      const { signal, signalBarIndex } = pendingQueue.shift()!;
+      if (openPositions.length < config.maxConcurrentPositions && balance > 0) {
+        const entryPrice = fillPrice(signal.side, 'entry', bar.open, config.costModel);
+        const stopDist = entryPrice * (signal.stopPct / 100);
+        const sl = signal.side === 'long' ? entryPrice - stopDist : entryPrice + stopDist;
+        const tp = signal.side === 'long'
+          ? entryPrice + stopDist * signal.tpMultiplier
+          : entryPrice - stopDist * signal.tpMultiplier;
+        const size = sizeFromRisk(balance, config.perTradeRiskPct, entryPrice, sl);
+        if (size > 0) {
+          totalNotionalTraded += entryPrice * size;
+          openPositions.push({
+            id: nextTradeId++, side: signal.side, signalBarIndex, entryBarIndex: i,
+            entryTs: bar.ts, entryPrice, size, sl, tp, slInProfit: false,
+          });
+        }
       }
     }
-    pendingSignal = null;
 
-    // 2) Manage open positions on bar i (conservative: SL checked before TP)
+    // 2) Manage open positions on bar i (handles gap-through stops + configurable intrabar SL/TP order)
     const remaining: OpenPos[] = [];
     for (const pos of openPositions) {
       const long = pos.side === 'long';
       const slHit = long ? bar.low <= pos.sl : bar.high >= pos.sl;
       const tpHit = long ? bar.high >= pos.tp : bar.low <= pos.tp;
+      const slFillRef = long ? Math.min(pos.sl, bar.open) : Math.max(pos.sl, bar.open);
+      const tpFillRef = long ? Math.max(pos.tp, bar.open) : Math.min(pos.tp, bar.open);
+      const slFirst = intrabarAssumption === 'conservative_sl_first';
+      if (slHit && tpHit) {
+        if (slFirst) closePos(pos, i, bar, slFillRef, pos.slInProfit ? 'trailing_stop' : 'sl');
+        else closePos(pos, i, bar, tpFillRef, 'tp');
+        continue;
+      }
       if (slHit) {
-        closePos(pos, i, bar, pos.sl, pos.slInProfit ? 'trailing_stop' : 'sl');
+        closePos(pos, i, bar, slFillRef, pos.slInProfit ? 'trailing_stop' : 'sl');
         continue;
       }
       if (tpHit) {
-        closePos(pos, i, bar, pos.tp, 'tp');
+        closePos(pos, i, bar, tpFillRef, 'tp');
         continue;
       }
       if (config.maxHoldBars && (i - pos.entryBarIndex) >= config.maxHoldBars) {
@@ -129,9 +141,9 @@ export function runBacktest(
     equityCurve.push({ ts: bar.ts, balance, equity, exposurePct });
 
     // 4) Generate next-bar signal using ONLY bars[0..i]
-    if (i < bars.length - 1 && openPositions.length < config.maxConcurrentPositions) {
+    if (i + latencyBars < bars.length && openPositions.length + pendingQueue.length < config.maxConcurrentPositions) {
       const sig = adapter(bars.slice(0, i + 1), config.strategyParams);
-      if (sig) pendingSignal = { signal: sig, signalBarIndex: i };
+      if (sig) pendingQueue.push({ signal: sig, signalBarIndex: i, executeAtBar: i + latencyBars });
     }
   }
 
