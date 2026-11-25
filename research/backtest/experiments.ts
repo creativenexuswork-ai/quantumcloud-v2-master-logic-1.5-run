@@ -1,4 +1,5 @@
 // ============= RESEARCH EXPERIMENTS: SPLITS, SENSITIVITY & PORTFOLIO =============
+import { classifyRegimeFromPrices } from '../../supabase/functions/_shared/master-logic-core';
 import { runBacktest } from './engine';
 import type { BacktestConfig, BacktestResult, OhlcvBar, StrategyAdapter } from './types';
 
@@ -159,4 +160,31 @@ export function analyzeCombinedPortfolio(runs: Record<string, BacktestResult>): 
     combinedMaxDrawdownPct: maxDd,
     returnCorrelationMatrix: matrix,
   };
+}
+
+export interface RegimeBucket {
+  trades: number;
+  winRatePct: number;
+  netPnl: number;
+}
+
+/** Attributes each trade to the Master Logic v1.5 regime (structure + volatility) at its signal bar. */
+export function analyzeByRegime(bars: readonly OhlcvBar[], result: BacktestResult): Record<string, RegimeBucket> {
+  const grouped: Record<string, number[]> = {};
+  for (const t of result.trades) {
+    const closes = bars.slice(Math.max(0, t.signalBarIndex - 49), t.signalBarIndex + 1).map(b => b.close);
+    const reg = classifyRegimeFromPrices(t.symbol, closes);
+    const key = `${reg.structure}_${reg.volatility}`;
+    (grouped[key] ??= []).push(t.netPnl);
+  }
+  const out: Record<string, RegimeBucket> = {};
+  for (const [k, pnls] of Object.entries(grouped)) {
+    const wins = pnls.filter(p => p > 0).length;
+    out[k] = {
+      trades: pnls.length,
+      winRatePct: pnls.length > 0 ? (wins / pnls.length) * 100 : 0,
+      netPnl: pnls.reduce((s, p) => s + p, 0),
+    };
+  }
+  return out;
 }

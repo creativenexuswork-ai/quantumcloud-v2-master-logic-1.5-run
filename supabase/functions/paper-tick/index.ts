@@ -7,6 +7,10 @@ import {
   executionPrice, canAddSymbolExposure,
   type EquityResult, type RiskConfig, type CostModelConfig,
 } from "../_shared/paper-core.ts";
+import {
+  MASTER_MODE_PROFILES,
+  classifyRegimeFromPrices,
+} from "../_shared/master-logic-core.ts";
 
 // Canonical equity loader: requires verified baseline + account-scoped realized trades.
 // deno-lint-ignore no-explicit-any
@@ -189,82 +193,8 @@ interface ModeProfile {
   cutLoserThreshold: number;
 }
 
-// ============== Mode Profiles v1.5 ==============
-
-const MODE_PROFILES: Record<TradingModeKey, ModeProfile> = {
-  burst: {
-    key: 'burst',
-    maxConcurrentTradesPerSymbol: 5,
-    maxConcurrentTradesTotal: 15,
-    maxEntriesPerTick: 3,
-    basePositionSizeFactor: 0.5,
-    entryScoreThreshold: 25,
-    edgeConfidenceMin: 0.3,
-    defaultStopPercent: 0.4,
-    defaultTPMultiplier: 1.5,
-    maxHoldMinutes: 15,
-    preferredStructures: ['trend', 'range'],
-    preferredVolatility: ['high', 'normal'],
-    allowedInAnyRegime: true,
-    trailingStopActivation: 0.5,
-    trailingStopDistance: 0.25,
-    cutLoserThreshold: -0.3,
-  },
-  scalper: {
-    key: 'scalper',
-    maxConcurrentTradesPerSymbol: 3,
-    maxConcurrentTradesTotal: 8,
-    maxEntriesPerTick: 2,
-    basePositionSizeFactor: 0.6,
-    entryScoreThreshold: 35,
-    edgeConfidenceMin: 0.4,
-    defaultStopPercent: 0.25,
-    defaultTPMultiplier: 1.5,
-    maxHoldMinutes: 10,
-    preferredStructures: ['range', 'trend'],
-    preferredVolatility: ['normal', 'high'],
-    allowedInAnyRegime: true,
-    trailingStopActivation: 0.4,
-    trailingStopDistance: 0.2,
-    cutLoserThreshold: -0.2,
-  },
-  trend: {
-    key: 'trend',
-    maxConcurrentTradesPerSymbol: 2,
-    maxConcurrentTradesTotal: 5,
-    maxEntriesPerTick: 1,
-    basePositionSizeFactor: 1.0,
-    entryScoreThreshold: 50,
-    edgeConfidenceMin: 0.5,
-    defaultStopPercent: 1.0,
-    defaultTPMultiplier: 2.5,
-    maxHoldMinutes: 120,
-    preferredStructures: ['trend'],
-    preferredVolatility: ['normal', 'high'],
-    allowedInAnyRegime: false,
-    trailingStopActivation: 1.0,
-    trailingStopDistance: 0.5,
-    cutLoserThreshold: -0.8,
-  },
-  adaptive: {
-    key: 'adaptive',
-    maxConcurrentTradesPerSymbol: 3,
-    maxConcurrentTradesTotal: 10,
-    maxEntriesPerTick: 2,
-    basePositionSizeFactor: 0.7,
-    entryScoreThreshold: 35,
-    edgeConfidenceMin: 0.4,
-    defaultStopPercent: 0.5,
-    defaultTPMultiplier: 2.0,
-    maxHoldMinutes: 60,
-    preferredStructures: ['trend', 'range'],
-    preferredVolatility: ['high', 'normal', 'low'],
-    allowedInAnyRegime: true,
-    trailingStopActivation: 0.6,
-    trailingStopDistance: 0.3,
-    cutLoserThreshold: -0.5,
-  },
-};
+// ============== Mode Profiles v1.5 (shared with research) ==============
+const MODE_PROFILES: Record<TradingModeKey, ModeProfile> = MASTER_MODE_PROFILES;
 
 // ============== Regime Engine v1.5 ==============
 
@@ -286,75 +216,7 @@ function calculateSMA(prices: number[], period: number): number {
 function classifyRegime(symbol: string, tick: PriceTick): RegimeSnapshot {
   recordPriceTick(symbol, tick.mid);
   const prices = priceHistory[symbol] || [];
-  
-  if (prices.length < 10) {
-    return {
-      symbol,
-      trendBias: 'neutral',
-      structure: 'range',
-      volatility: 'normal',
-      trendStrength: 40,
-      volatilityRatio: 1,
-      confidence: 0.4,
-      smaAlignment: 'mixed',
-    };
-  }
-  
-  // Calculate trend bias
-  const sma5 = calculateSMA(prices, 5);
-  const sma20 = calculateSMA(prices, Math.min(20, prices.length));
-  const currentPrice = prices[prices.length - 1];
-  
-  let bullishCount = 0;
-  if (currentPrice > sma5) bullishCount++;
-  if (sma5 > sma20) bullishCount++;
-  if (currentPrice > sma20) bullishCount++;
-  
-  const smaAlignment: 'bullish' | 'bearish' | 'mixed' = 
-    bullishCount >= 2 ? 'bullish' : bullishCount <= 1 ? 'bearish' : 'mixed';
-  
-  // Calculate directional movement
-  let ups = 0, downs = 0;
-  for (let i = 1; i < prices.length; i++) {
-    if (prices[i] > prices[i - 1]) ups++;
-    else if (prices[i] < prices[i - 1]) downs++;
-  }
-  
-  const directionalStrength = Math.abs(ups - downs) / Math.max(1, ups + downs);
-  const trendStrength = Math.min(100, directionalStrength * 50 + (smaAlignment !== 'mixed' ? 25 : 0));
-  
-  const trendBias: TrendBias = ups > downs && trendStrength > 35 ? 'bull' 
-    : downs > ups && trendStrength > 35 ? 'bear' : 'neutral';
-  
-  // Calculate volatility
-  let atrSum = 0;
-  for (let i = 1; i < prices.length; i++) {
-    atrSum += Math.abs(prices[i] - prices[i - 1]);
-  }
-  const atr = atrSum / (prices.length - 1);
-  const volatilityRatio = prices.length > 20 
-    ? atr / (calculateSMA(prices.slice(-20).map((p, i, arr) => i > 0 ? Math.abs(p - arr[i-1]) : 0).slice(1), 19) || atr)
-    : 1;
-  
-  const volatility: VolatilityLevel = volatilityRatio > 1.3 ? 'high' : volatilityRatio < 0.7 ? 'low' : 'normal';
-  const structure: MarketStructure = trendStrength > 45 ? 'trend' : 'range';
-  
-  // Calculate confidence
-  let confidence = 0.5;
-  if (prices.length >= 30) confidence += 0.2;
-  if (smaAlignment !== 'mixed') confidence += 0.15;
-  confidence = Math.min(0.9, confidence);
-  
-  return {
-    symbol,
-    trendBias,
-    structure,
-    volatility,
-    trendStrength,
-    volatilityRatio,
-    confidence,
-    smaAlignment,
-  };
+  return classifyRegimeFromPrices(symbol, prices);
 }
 
 // ============== Thermostat Engine v1.5 ==============

@@ -3,6 +3,7 @@ import { parseOhlcvCsv } from '../research/backtest/csv';
 import { returnCorrelation, runBacktest, runWalkForward } from '../research/backtest/engine';
 import {
   analyzeCombinedPortfolio,
+  analyzeByRegime,
   runGuardedGridExperiment,
   runRobustnessSensitivity,
   splitTrainValTest,
@@ -194,5 +195,36 @@ describe('backtest engine guarantees', () => {
 
     const portfolio = analyzeCombinedPortfolio({ faithful: faithfulRes, prototype: protoRes });
     expect(portfolio.returnCorrelationMatrix.faithful.faithful).toBe(1);
+
+    const byRegime = analyzeByRegime(bars, faithfulRes);
+    const regimeTradeTotal = Object.values(byRegime).reduce((s, b) => s + b.trades, 0);
+    expect(regimeTradeTotal).toBe(faithfulRes.trades.length);
+  });
+
+  it('enforces trailing stop ratchet, maxConcurrentPositions cap, and end_of_data close', () => {
+    const bars: OhlcvBar[] = [
+      { ts: 1000, open: 100, high: 100.5, low: 99.5, close: 100, volume: 10 },
+      { ts: 2000, open: 100, high: 102.5, low: 99.8, close: 102, volume: 10 }, // +2% arms trailing SL at 102*(1-0.005)=101.49
+      { ts: 3000, open: 102, high: 102.1, low: 101.0, close: 101.2, volume: 10 }, // hits trailing SL in profit
+    ];
+    const alwaysLong: StrategyAdapter = () => ({ side: 'long', stopPct: 1, tpMultiplier: 5, reason: 'trail_test' });
+    const res = runBacktest(bars, {
+      ...baseConfig,
+      maxConcurrentPositions: 1,
+      costModel: { spreadBps: 0, slippageBps: 0, takerFeeBps: 0 },
+      trailingActivationPct: 1.0,
+      trailingDistancePct: 0.5,
+    }, alwaysLong);
+    expect(res.trades[0].exitReason).toBe('trailing_stop');
+    expect(res.trades[0].netPnl).toBeGreaterThan(0);
+
+    const flatBars: OhlcvBar[] = [
+      { ts: 1000, open: 100, high: 100.2, low: 99.8, close: 100, volume: 10 },
+      { ts: 2000, open: 100, high: 100.2, low: 99.8, close: 100, volume: 10 },
+      { ts: 3000, open: 100, high: 100.2, low: 99.8, close: 100, volume: 10 },
+    ];
+    const eodRes = runBacktest(flatBars, { ...baseConfig, maxConcurrentPositions: 1 }, alwaysLong);
+    expect(eodRes.trades).toHaveLength(1);
+    expect(eodRes.trades[0].exitReason).toBe('end_of_data');
   });
 });
